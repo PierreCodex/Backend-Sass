@@ -1,8 +1,45 @@
 <?php
 
-use Illuminate\Http\Request;
+declare(strict_types=1);
+
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Controllers\Auth\RegistroController;
+use App\Http\Controllers\Auth\VerificacionCorreoController;
+use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\Publico\CategoriasNegocioController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+/*
+|--------------------------------------------------------------------------
+| Sin sesión (registro, verificación, login, recuperación)
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware('throttle:20,1')->group(function () {
+    Route::get('/publico/categorias-negocio', CategoriasNegocioController::class);
+
+    Route::post('/register', RegistroController::class);
+    Route::post('/email/verificar', [VerificacionCorreoController::class, 'verificar']);
+    Route::post('/email/reenviar', [VerificacionCorreoController::class, 'reenviar']);
+
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    Route::post('/forgot-password', [PasswordController::class, 'forgot']);
+    Route::post('/reset-password', [PasswordController::class, 'reset']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Panel (Bearer del BFF). El tenant se deriva del token; X-Tenant es pista
+| redundante que SIEMPRE se valida (middleware tenant.token).
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/user', [AuthController::class, 'user']);
+
+    Route::get('/onboarding', [OnboardingController::class, 'show']);
+    Route::post('/onboarding/nombre', [OnboardingController::class, 'nombre']);
+    Route::put('/onboarding/pasos/{clave}', [OnboardingController::class, 'marcarPaso']);
+});

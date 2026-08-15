@@ -12,7 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->alias([
+            'tenant.token' => App\Http\Middleware\ValidarTenantDelToken::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
