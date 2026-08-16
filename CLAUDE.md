@@ -23,7 +23,8 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 **Jerarquía ante conflicto**, de mayor a menor:
 1. `docs/discrepancias.md` (congelado) — las decisiones ya cerradas
 2. `api-contract.md` — la forma de los datos que el cliente ya espera
-3. Los SQL de `docs/` — reglas de negocio e integridad
+3. Los SQL de `docs/` — reglas de negocio e integridad; desde el Sprint 0 son
+   un volcado generado de las migraciones, así que ante duda mandan estas
 4. Las fichas de `vistas/` — el porqué de cada campo
 
 ## Arquitectura decidida
@@ -101,7 +102,12 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   sus endpoints lleguen en sprints posteriores: el job de provisioning migra
   la BD entera una vez, y añadir tablas después obliga a re-migrar cada tenant.
 
-## Base de datos (esquemas de referencia en docs/)
+## Base de datos (esquema real en docs/)
+
+La fuente de verdad son las **migraciones** (`database/migrations/` para la
+central, `database/migrations/tenant/` para tenants). Desde el Sprint 0 los
+SQL de `docs/` ya no son el original histórico sino un **volcado generado**
+del esquema real — se leen, nunca se editan a mano ni se ejecutan crudos:
 
 - `docs/01_bd_central.sql` — BD central (landlord): tenants, domains, users,
   platform_admins, planes, pagos, soporte, notificaciones,
@@ -109,9 +115,10 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 - `docs/02_bd_tenant.sql` — BD por tenant: citas, cita_servicio, cita_producto,
   cita_pagos, profesionales, clientes, servicios, productos, locales, grupos,
   caja, inventario, plantillas whatsapp
-- **Convertir estos SQL en migraciones** (`database/migrations/` para la
-  central y `database/migrations/tenant/` para tenants). NO ejecutar el SQL
-  crudo. Aplicar encima las divergencias del §5 de `discrepancias.md`.
+
+**Ritual al cerrar un sprint que toque migraciones**: migrar sobre una base
+desechable (nunca la de desarrollo), provisionar un tenant, volcar con
+`mysqldump --no-data`, actualizar la fecha de la cabecera y borrar la base.
 
 ### Decisiones clave del esquema
 

@@ -1,406 +1,385 @@
--- ============================================================================
--- BD CENTRAL (LANDLORD) — saas_central
--- Arquitectura: stancl/tenancy v3, multi-database (una BD por tenant)
--- Motor: MySQL 8 / MariaDB 10.6+  |  Laravel 12 como API (Sanctum por tokens)
+-- =============================================================================
+-- BD CENTRAL (landlord) — esquema real
 --
--- Contiene TODO lo que es "de la plataforma":
---   identidad (users), tenants, planes/pagos, soporte, notificaciones,
---   infraestructura de Laravel (jobs, cache, tokens de Sanctum).
--- Las tablas de negocio (citas, servicios, caja...) viven en la BD del tenant.
--- ============================================================================
+-- GENERADO desde las migraciones — no editar a mano.
+-- Última actualización: 2026-08-15
+--
+-- Tenants, usuarios, planes, pagos, soporte, notificaciones, metricas e infraestructura de Laravel. Una sola base compartida por toda la plataforma.
+--
+-- Para regenerarlo: migrar sobre una base limpia y volcar con
+--   mysqldump -u root --no-data --skip-add-drop-table --skip-set-charset
+-- (ver el ritual en CLAUDE.md § Base de datos).
+--
+-- La jerarquía ante conflicto NO cambia: docs/discrepancias.md (congelado)
+-- manda sobre este archivo; este archivo solo describe lo que existe hoy.
+-- =============================================================================
 
-SET NAMES utf8mb4;
-SET FOREIGN_KEY_CHECKS = 0;
-
--- ----------------------------------------------------------------------------
--- 1. TENANTS (reemplaza a `negocios`)
---    stancl usa `id` string. Usamos el slug como id del tenant: legible,
---    aparece en el nombre de la BD (tenant_aster_hair_salon) y en el subdominio.
---    Columnas "de negocio" del antiguo `negocios` que son de PLATAFORMA se
---    quedan aquí; las de personalización visual también (las lee el sitio
---    público antes de tocar la BD del tenant).
--- ----------------------------------------------------------------------------
-CREATE TABLE `tenants` (
-  `id` VARCHAR(63) NOT NULL,                       -- slug: 'aster-hair-salon'
-  `plan_id` BIGINT UNSIGNED NOT NULL,
-  `business_category_id` BIGINT UNSIGNED NULL,
-  `categoria_otro_detalle` VARCHAR(255) NULL,
-
-  -- Identidad pública del negocio
-  `nombre` VARCHAR(150) NOT NULL,
-  `descripcion` TEXT NULL,
-  `email` VARCHAR(150) NULL,
-  `telefono` VARCHAR(30) NULL,
-  `whatsapp` VARCHAR(30) NULL,
-  `direccion` VARCHAR(255) NULL,
-  `latitud` DECIMAL(10,8) NULL,
-  `longitud` DECIMAL(11,8) NULL,
-  `zona_horaria` VARCHAR(64) NOT NULL DEFAULT 'America/Lima',  -- ya NO nullable
-
-  -- Marca / sitio público
-  `logo` VARCHAR(255) NULL,
-  `cover` VARCHAR(255) NULL,
-  `color_primario` CHAR(7) NOT NULL DEFAULT '#4f46e5',
-  `color_secundario` CHAR(7) NOT NULL DEFAULT '#06b6d4',
-  `sitio_publico_activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `mostrar_en_marketplace` TINYINT(1) NOT NULL DEFAULT 0,
-  `terminos_servicio` TEXT NULL,
-  `mapa_embed` TEXT NULL,
-
-  -- Ciclo de vida SaaS (lazy provisioning + purga automatizada)
-  `estado` ENUM('registrada','prueba','activa','suspendida','purga_pendiente','eliminada')
-           NOT NULL DEFAULT 'registrada',
-  `db_provisionada` TINYINT(1) NOT NULL DEFAULT 0, -- 0 hasta completar onboarding
-  `onboarding_completado` TINYINT(1) NOT NULL DEFAULT 0,
-  `onboarding_pasos` JSON NULL,
-  `suscripcion_vence_el` DATE NULL,
-  `suspendida_el` TIMESTAMP NULL,
-  `aviso_purga_enviado_el` TIMESTAMP NULL,          -- correo "se eliminará en 15 días"
-  `purga_programada_el` DATE NULL,
-
-  -- Límites y consumo del plan
-  `extra_profesionales` INT UNSIGNED NOT NULL DEFAULT 0,
-  `extra_whatsapp` INT UNSIGNED NOT NULL DEFAULT 0,
-  `whatsapp_mensajes_enviados_mes` INT UNSIGNED NOT NULL DEFAULT 0,
-  `whatsapp_mes_periodo` DATE NULL,
-
-  `configuracion` JSON NULL,
-  `data` JSON NULL,                                 -- requerido por stancl (VirtualColumn)
-
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  `deleted_at` TIMESTAMP NULL,
-
+-- Tabla `anuncios`
+CREATE TABLE `anuncios` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `platform_admin_id` bigint unsigned NOT NULL,
+  `titulo` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `contenido` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `audiencia` enum('todos','duenos','profesionales') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'todos',
+  `publicado_el` timestamp NULL DEFAULT NULL,
+  `expira_el` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `tenants_estado_idx` (`estado`, `suscripcion_vence_el`),
-  CONSTRAINT `tenants_plan_fk` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`),
-  CONSTRAINT `tenants_categoria_fk` FOREIGN KEY (`business_category_id`)
-    REFERENCES `business_categories` (`id`) ON DELETE SET NULL
+  KEY `anuncios_platform_admin_id_foreign` (`platform_admin_id`),
+  CONSTRAINT `anuncios_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ----------------------------------------------------------------------------
--- 2. DOMAINS (stancl) — resolución del tenant por subdominio o dominio propio
---    Reemplaza a negocios.slug + negocios.dominio_personalizado.
---    'aster-hair-salon.tuapp.pe' y 'reservas.asterhair.pe' → mismo tenant.
--- ----------------------------------------------------------------------------
-CREATE TABLE `domains` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `domain` VARCHAR(255) NOT NULL,
-  `tenant_id` VARCHAR(63) NOT NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `domains_domain_unique` (`domain`),
-  KEY `domains_tenant_idx` (`tenant_id`),
-  CONSTRAINT `domains_tenant_fk` FOREIGN KEY (`tenant_id`)
-    REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ----------------------------------------------------------------------------
--- 3. PLANES Y PAGOS (idénticos en espíritu al esquema actual)
--- ----------------------------------------------------------------------------
-CREATE TABLE `planes` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `nombre` VARCHAR(50) NOT NULL,
-  `slug` VARCHAR(50) NOT NULL,
-  `precio_mensual` DECIMAL(10,2) NOT NULL DEFAULT 0,
-  `precio_anual` DECIMAL(10,2) NULL,
-  `max_profesionales` INT UNSIGNED NULL,            -- NULL = ilimitado
-  `max_locales` INT UNSIGNED NULL,
-  `whatsapp_mensajes_mes` INT UNSIGNED NOT NULL DEFAULT 0,
-  `permite_subdominio` TINYINT(1) NOT NULL DEFAULT 0,
-  `permite_dominio_propio` TINYINT(1) NOT NULL DEFAULT 0,
-  `permite_agenda` TINYINT(1) NOT NULL DEFAULT 1,
-  `permite_promociones` TINYINT(1) NOT NULL DEFAULT 0,
-  `features` JSON NULL,
-  `activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `planes_slug_unique` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `pagos` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id` VARCHAR(63) NOT NULL,
-  `plan_id` BIGINT UNSIGNED NOT NULL,
-  `monto` DECIMAL(10,2) NOT NULL,
-  `periodo` ENUM('mensual','anual') NOT NULL DEFAULT 'mensual',
-  `fecha_pago` DATE NOT NULL,
-  `metodo` VARCHAR(50) NULL,
-  `estado` ENUM('pagado','pendiente','vencido','reembolsado') NOT NULL DEFAULT 'pagado',
-  `referencia_externa` VARCHAR(120) NULL,           -- id de Culqi/Niubiz/Stripe
-  `nota` VARCHAR(255) NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  KEY `pagos_tenant_fecha_idx` (`tenant_id`, `fecha_pago`),
-  CONSTRAINT `pagos_tenant_fk` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`),
-  CONSTRAINT `pagos_plan_fk` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+-- Tabla `business_categories`
 CREATE TABLE `business_categories` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `nombre` VARCHAR(100) NOT NULL,
-  `slug` VARCHAR(100) NOT NULL,
-  `icono` VARCHAR(100) NULL,
-  `activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `slug` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `icono` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `business_categories_slug_unique` (`slug`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ----------------------------------------------------------------------------
--- 4. IDENTIDAD — decisión clave: usuarios en la BD CENTRAL
---
---    Se separa en DOS tablas (corrige el `users` monolítico actual):
---    a) platform_admins : superadmin y soporte. SIN tenant. Guard propio.
---       Elimina el problema del tenant_id NULL "mágico".
---    b) users           : dueño / admin / profesional / cliente de UN tenant.
---       tenant_id NOT NULL siempre.
---
---    El PERFIL laboral del profesional (comisión, sueldo, horario) ya NO vive
---    aquí: vive en `profesionales` dentro de la BD del tenant. Aquí solo
---    queda identidad y credenciales.
--- ----------------------------------------------------------------------------
-CREATE TABLE `platform_admins` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `nombre` VARCHAR(150) NOT NULL,
-  `email` VARCHAR(150) NOT NULL,
-  `password` VARCHAR(255) NOT NULL,
-  `rol` ENUM('superadmin','soporte') NOT NULL DEFAULT 'soporte',
-  `activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `two_factor_secret` TEXT NULL,
-  `remember_token` VARCHAR(100) NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  `deleted_at` TIMESTAMP NULL,
+-- Tabla `cache`
+CREATE TABLE `cache` (
+  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `value` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expiration` int NOT NULL,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `cache_locks`
+CREATE TABLE `cache_locks` (
+  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `owner` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expiration` int NOT NULL,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `domains`
+CREATE TABLE `domains` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `domain` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `platform_admins_email_unique` (`email`)
+  UNIQUE KEY `domains_domain_unique` (`domain`),
+  KEY `domains_tenant_id_foreign` (`tenant_id`),
+  CONSTRAINT `domains_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `users` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id` VARCHAR(63) NOT NULL,                 -- NOT NULL: sin excepciones
-  `nombre` VARCHAR(150) NOT NULL,
-  `usuario` VARCHAR(100) NOT NULL,
-  `email` VARCHAR(150) NULL,
-  `email_verified_at` TIMESTAMP NULL,               -- requisito p/ provisionar BD
-  `password` VARCHAR(255) NOT NULL,
-  `rol` ENUM('dueno','admin','profesional','cliente') NOT NULL DEFAULT 'cliente',
-  `foto` VARCHAR(255) NULL,
-  `telefono` VARCHAR(30) NULL,
-  `activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `remember_token` VARCHAR(100) NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  `deleted_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  -- Corrige los 2 bugs encontrados en el dump:
-  UNIQUE KEY `users_tenant_usuario_unique` (`tenant_id`, `usuario`), -- 'admin' libre en cada negocio
-  UNIQUE KEY `users_tenant_email_unique` (`tenant_id`, `email`),     -- sin emails duplicados por tenant
-  KEY `users_email_idx` (`email`),                  -- login por email cross-tenant
-  CONSTRAINT `users_tenant_fk` FOREIGN KEY (`tenant_id`)
-    REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Reset de contraseña: se agrega tenant_id porque el email ya no es único global
-CREATE TABLE `password_reset_tokens` (
-  `email` VARCHAR(150) NOT NULL,
-  `tenant_id` VARCHAR(63) NOT NULL DEFAULT '_platform',  -- '_platform' = admins
-  `token` VARCHAR(255) NOT NULL,
-  `created_at` TIMESTAMP NULL,
-  PRIMARY KEY (`email`, `tenant_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Sanctum: los tokens de la API viven en la central (auth ANTES de tenancy)
-CREATE TABLE `personal_access_tokens` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tokenable_type` VARCHAR(255) NOT NULL,
-  `tokenable_id` BIGINT UNSIGNED NOT NULL,
-  `name` VARCHAR(255) NOT NULL,
-  `token` VARCHAR(64) NOT NULL,
-  `abilities` TEXT NULL,
-  `last_used_at` TIMESTAMP NULL,
-  `expires_at` TIMESTAMP NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `pat_token_unique` (`token`),
-  KEY `pat_tokenable_idx` (`tokenable_type`, `tokenable_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `login_alertas` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id` BIGINT UNSIGNED NULL,
-  `platform_admin_id` BIGINT UNSIGNED NULL,
-  `ip` VARCHAR(45) NULL,
-  `user_agent` VARCHAR(255) NULL,
-  `token` VARCHAR(100) NULL,
-  `resuelta` TINYINT(1) NOT NULL DEFAULT 0,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `login_alertas_token_unique` (`token`),
-  CONSTRAINT `login_alertas_user_fk` FOREIGN KEY (`user_id`)
-    REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `login_alertas_admin_fk` FOREIGN KEY (`platform_admin_id`)
-    REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ----------------------------------------------------------------------------
--- 5. SOPORTE Y COMUNICACIÓN — central: soporte ve todo sin abrir N bases
--- ----------------------------------------------------------------------------
-CREATE TABLE `soporte_tickets` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id` VARCHAR(63) NULL,
-  `user_id` BIGINT UNSIGNED NOT NULL,
-  `soporte_admin_id` BIGINT UNSIGNED NULL,
-  `asunto` VARCHAR(200) NOT NULL,
-  `descripcion` TEXT NULL,
-  `prioridad` ENUM('baja','media','alta','critica') NOT NULL DEFAULT 'media',
-  `estado` ENUM('abierto','en_proceso','resuelto','cerrado') NOT NULL DEFAULT 'abierto',
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  KEY `tickets_tenant_idx` (`tenant_id`, `estado`),
-  CONSTRAINT `tickets_tenant_fk` FOREIGN KEY (`tenant_id`)
-    REFERENCES `tenants` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `tickets_user_fk` FOREIGN KEY (`user_id`)
-    REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `tickets_admin_fk` FOREIGN KEY (`soporte_admin_id`)
-    REFERENCES `platform_admins` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `soporte_acciones` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `ticket_id` BIGINT UNSIGNED NULL,
-  `tenant_id` VARCHAR(63) NULL,
-  `soporte_admin_id` BIGINT UNSIGNED NOT NULL,
-  `accion` VARCHAR(100) NOT NULL,
-  `detalle` TEXT NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT `acciones_ticket_fk` FOREIGN KEY (`ticket_id`)
-    REFERENCES `soporte_tickets` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `acciones_tenant_fk` FOREIGN KEY (`tenant_id`)
-    REFERENCES `tenants` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `acciones_admin_fk` FOREIGN KEY (`soporte_admin_id`)
-    REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `notificaciones` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id` BIGINT UNSIGNED NULL,
-  `platform_admin_id` BIGINT UNSIGNED NULL,
-  `tipo` VARCHAR(100) NOT NULL,
-  `titulo` VARCHAR(255) NOT NULL,
-  `mensaje` TEXT NOT NULL,
-  `url` VARCHAR(255) NULL,
-  `leida_el` TIMESTAMP NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  KEY `notif_user_idx` (`user_id`, `leida_el`),
-  CONSTRAINT `notif_user_fk` FOREIGN KEY (`user_id`)
-    REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `notif_admin_fk` FOREIGN KEY (`platform_admin_id`)
-    REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `anuncios` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `platform_admin_id` BIGINT UNSIGNED NOT NULL,
-  `titulo` VARCHAR(200) NOT NULL,
-  `contenido` TEXT NOT NULL,
-  `audiencia` ENUM('todos','duenos','profesionales') NOT NULL DEFAULT 'todos',
-  `publicado_el` TIMESTAMP NULL,
-  `expira_el` TIMESTAMP NULL,
-  `created_at` TIMESTAMP NULL,
-  `updated_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT `anuncios_admin_fk` FOREIGN KEY (`platform_admin_id`)
-    REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ----------------------------------------------------------------------------
--- 6. MÉTRICAS AGREGADAS — el reemplazo del "SELECT COUNT(*) global"
---    Un job nocturno recorre los tenants activos y vuelca aquí sus números.
---    Es la respuesta al problema de reportes cross-tenant en multi-BD.
--- ----------------------------------------------------------------------------
-CREATE TABLE `tenant_metricas_diarias` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id` VARCHAR(63) NOT NULL,
-  `fecha` DATE NOT NULL,
-  `citas_creadas` INT UNSIGNED NOT NULL DEFAULT 0,
-  `citas_completadas` INT UNSIGNED NOT NULL DEFAULT 0,
-  `citas_canceladas` INT UNSIGNED NOT NULL DEFAULT 0,
-  `ingresos` DECIMAL(12,2) NOT NULL DEFAULT 0,
-  `clientes_nuevos` INT UNSIGNED NOT NULL DEFAULT 0,
-  `profesionales_activos` INT UNSIGNED NOT NULL DEFAULT 0,
-  `created_at` TIMESTAMP NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `metricas_tenant_fecha_unique` (`tenant_id`, `fecha`),
-  CONSTRAINT `metricas_tenant_fk` FOREIGN KEY (`tenant_id`)
-    REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ----------------------------------------------------------------------------
--- 7. INFRAESTRUCTURA LARAVEL (colas centrales, cache, fallos)
---    stancl prefija los jobs con el tenant automáticamente vía middleware.
--- ----------------------------------------------------------------------------
-CREATE TABLE `jobs` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `queue` VARCHAR(255) NOT NULL,
-  `payload` LONGTEXT NOT NULL,
-  `attempts` TINYINT UNSIGNED NOT NULL,
-  `reserved_at` INT UNSIGNED NULL,
-  `available_at` INT UNSIGNED NOT NULL,
-  `created_at` INT UNSIGNED NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `jobs_queue_idx` (`queue`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `job_batches` (
-  `id` VARCHAR(255) NOT NULL,
-  `name` VARCHAR(255) NOT NULL,
-  `total_jobs` INT NOT NULL,
-  `pending_jobs` INT NOT NULL,
-  `failed_jobs` INT NOT NULL,
-  `failed_job_ids` LONGTEXT NOT NULL,
-  `options` MEDIUMTEXT NULL,
-  `cancelled_at` INT NULL,
-  `created_at` INT NOT NULL,
-  `finished_at` INT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+-- Tabla `failed_jobs`
 CREATE TABLE `failed_jobs` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `uuid` VARCHAR(255) NOT NULL,
-  `connection` TEXT NOT NULL,
-  `queue` TEXT NOT NULL,
-  `payload` LONGTEXT NOT NULL,
-  `exception` LONGTEXT NOT NULL,
-  `failed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `connection` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `queue` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exception` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `cache` (
-  `key` VARCHAR(255) NOT NULL,
-  `value` MEDIUMTEXT NOT NULL,
-  `expiration` INT NOT NULL,
-  PRIMARY KEY (`key`)
+-- Tabla `job_batches`
+CREATE TABLE `job_batches` (
+  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `total_jobs` int NOT NULL,
+  `pending_jobs` int NOT NULL,
+  `failed_jobs` int NOT NULL,
+  `failed_job_ids` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `options` mediumtext COLLATE utf8mb4_unicode_ci,
+  `cancelled_at` int DEFAULT NULL,
+  `created_at` int NOT NULL,
+  `finished_at` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `cache_locks` (
-  `key` VARCHAR(255) NOT NULL,
-  `owner` VARCHAR(255) NOT NULL,
-  `expiration` INT NOT NULL,
-  PRIMARY KEY (`key`)
+-- Tabla `jobs`
+CREATE TABLE `jobs` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `queue` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `attempts` tinyint unsigned NOT NULL,
+  `reserved_at` int unsigned DEFAULT NULL,
+  `available_at` int unsigned NOT NULL,
+  `created_at` int unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `jobs_queue_index` (`queue`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-SET FOREIGN_KEY_CHECKS = 1;
+-- Tabla `login_alertas`
+CREATE TABLE `login_alertas` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint unsigned DEFAULT NULL,
+  `platform_admin_id` bigint unsigned DEFAULT NULL,
+  `ip` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `token` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `resuelta` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `login_alertas_token_unique` (`token`),
+  KEY `login_alertas_user_id_foreign` (`user_id`),
+  KEY `login_alertas_platform_admin_id_foreign` (`platform_admin_id`),
+  CONSTRAINT `login_alertas_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `login_alertas_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `migrations`
+CREATE TABLE `migrations` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `batch` int NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `notificaciones`
+CREATE TABLE `notificaciones` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint unsigned DEFAULT NULL,
+  `platform_admin_id` bigint unsigned DEFAULT NULL,
+  `tipo` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `titulo` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mensaje` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `leida_el` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `notificaciones_platform_admin_id_foreign` (`platform_admin_id`),
+  KEY `notificaciones_user_id_leida_el_index` (`user_id`,`leida_el`),
+  CONSTRAINT `notificaciones_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificaciones_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `pagos`
+CREATE TABLE `pagos` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `plan_id` bigint unsigned NOT NULL,
+  `monto` decimal(10,2) NOT NULL,
+  `periodo` enum('mensual','anual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'mensual',
+  `fecha_pago` date NOT NULL,
+  `metodo` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `estado` enum('pagado','pendiente','vencido','reembolsado') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pagado',
+  `referencia_externa` varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nota` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `pagos_plan_id_foreign` (`plan_id`),
+  KEY `pagos_tenant_id_fecha_pago_index` (`tenant_id`,`fecha_pago`),
+  CONSTRAINT `pagos_plan_id_foreign` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`),
+  CONSTRAINT `pagos_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `password_reset_tokens`
+CREATE TABLE `password_reset_tokens` (
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `token` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `personal_access_tokens`
+CREATE TABLE `personal_access_tokens` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `tokenable_type` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tokenable_id` bigint unsigned NOT NULL,
+  `name` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `abilities` text COLLATE utf8mb4_unicode_ci,
+  `last_used_at` timestamp NULL DEFAULT NULL,
+  `expires_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `personal_access_tokens_token_unique` (`token`),
+  KEY `personal_access_tokens_tokenable_type_tokenable_id_index` (`tokenable_type`,`tokenable_id`),
+  KEY `personal_access_tokens_expires_at_index` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `planes`
+CREATE TABLE `planes` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `slug` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `descripcion` text COLLATE utf8mb4_unicode_ci,
+  `precio_mensual` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `precio_anual` decimal(10,2) DEFAULT NULL,
+  `precio_promo` decimal(10,2) DEFAULT NULL,
+  `promo_duracion_meses` int unsigned NOT NULL DEFAULT '0',
+  `promo_activa` tinyint(1) NOT NULL DEFAULT '0',
+  `max_profesionales` int unsigned NOT NULL DEFAULT '999',
+  `max_sucursales` int unsigned NOT NULL DEFAULT '999',
+  `max_whatsapp_mes` int unsigned NOT NULL DEFAULT '0',
+  `precio_profesional_extra` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `precio_whatsapp_extra` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `mensajes_whatsapp_extra` int unsigned NOT NULL DEFAULT '50',
+  `destacado` tinyint(1) NOT NULL DEFAULT '0',
+  `features` json DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `planes_slug_unique` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `platform_admins`
+CREATE TABLE `platform_admins` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rol` enum('superadmin','soporte') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'soporte',
+  `activo` tinyint(1) NOT NULL DEFAULT '1',
+  `two_factor_secret` text COLLATE utf8mb4_unicode_ci,
+  `remember_token` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `platform_admins_email_unique` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `soporte_acciones`
+CREATE TABLE `soporte_acciones` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `ticket_id` bigint unsigned DEFAULT NULL,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `soporte_admin_id` bigint unsigned NOT NULL,
+  `accion` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `detalle` text COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `soporte_acciones_ticket_id_foreign` (`ticket_id`),
+  KEY `soporte_acciones_soporte_admin_id_foreign` (`soporte_admin_id`),
+  KEY `soporte_acciones_tenant_id_foreign` (`tenant_id`),
+  CONSTRAINT `soporte_acciones_soporte_admin_id_foreign` FOREIGN KEY (`soporte_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `soporte_acciones_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `soporte_acciones_ticket_id_foreign` FOREIGN KEY (`ticket_id`) REFERENCES `soporte_tickets` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `soporte_tickets`
+CREATE TABLE `soporte_tickets` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_id` bigint unsigned NOT NULL,
+  `soporte_admin_id` bigint unsigned DEFAULT NULL,
+  `asunto` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `descripcion` text COLLATE utf8mb4_unicode_ci,
+  `respuesta` text COLLATE utf8mb4_unicode_ci,
+  `prioridad` enum('baja','media','alta','critica') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'media',
+  `estado` enum('abierto','en_proceso','resuelto','cerrado') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'abierto',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `soporte_tickets_user_id_foreign` (`user_id`),
+  KEY `soporte_tickets_soporte_admin_id_foreign` (`soporte_admin_id`),
+  KEY `soporte_tickets_tenant_id_estado_index` (`tenant_id`,`estado`),
+  CONSTRAINT `soporte_tickets_soporte_admin_id_foreign` FOREIGN KEY (`soporte_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `soporte_tickets_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `soporte_tickets_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `tenant_metricas_diarias`
+CREATE TABLE `tenant_metricas_diarias` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fecha` date NOT NULL,
+  `citas_creadas` int unsigned NOT NULL DEFAULT '0',
+  `citas_completadas` int unsigned NOT NULL DEFAULT '0',
+  `citas_canceladas` int unsigned NOT NULL DEFAULT '0',
+  `ingresos` decimal(12,2) NOT NULL DEFAULT '0.00',
+  `clientes_nuevos` int unsigned NOT NULL DEFAULT '0',
+  `profesionales_activos` int unsigned NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tenant_metricas_diarias_tenant_id_fecha_unique` (`tenant_id`,`fecha`),
+  CONSTRAINT `tenant_metricas_diarias_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `tenants`
+CREATE TABLE `tenants` (
+  `id` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `slug` varchar(63) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `plan_id` bigint unsigned NOT NULL,
+  `business_category_id` bigint unsigned DEFAULT NULL,
+  `categoria_otro_detalle` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rango_profesionales` varchar(15) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nombre` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `descripcion` text COLLATE utf8mb4_unicode_ci,
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `telefono` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `whatsapp` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `direccion` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `latitud` decimal(10,8) DEFAULT NULL,
+  `longitud` decimal(11,8) DEFAULT NULL,
+  `zona_horaria` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'America/Lima',
+  `logo` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cover` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `color_primario` char(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#4f46e5',
+  `color_secundario` char(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#06b6d4',
+  `sitio_publico_activo` tinyint(1) NOT NULL DEFAULT '1',
+  `mostrar_en_marketplace` tinyint(1) NOT NULL DEFAULT '0',
+  `terminos_servicio` text COLLATE utf8mb4_unicode_ci,
+  `mapa_embed` text COLLATE utf8mb4_unicode_ci,
+  `estado` enum('registrada','prueba','activa','suspendida','purga_pendiente','eliminada') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'registrada',
+  `db_provisionada` tinyint(1) NOT NULL DEFAULT '0',
+  `onboarding_completado` tinyint(1) NOT NULL DEFAULT '0',
+  `onboarding_pasos` json DEFAULT NULL,
+  `suscripcion_vence_el` date DEFAULT NULL,
+  `suspendida_el` timestamp NULL DEFAULT NULL,
+  `aviso_purga_enviado_el` timestamp NULL DEFAULT NULL,
+  `purga_programada_el` date DEFAULT NULL,
+  `extra_profesionales` int unsigned NOT NULL DEFAULT '0',
+  `extra_whatsapp` int unsigned NOT NULL DEFAULT '0',
+  `whatsapp_mensajes_enviados_mes` int unsigned NOT NULL DEFAULT '0',
+  `whatsapp_mes_periodo` date DEFAULT NULL,
+  `pagos_qr_activo` tinyint(1) NOT NULL DEFAULT '0',
+  `qr_imagen` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `instrucciones_pago` text COLLATE utf8mb4_unicode_ci,
+  `configuracion` json DEFAULT NULL,
+  `data` json DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `tenants_slug_unique` (`slug`),
+  KEY `tenants_plan_id_foreign` (`plan_id`),
+  KEY `tenants_business_category_id_foreign` (`business_category_id`),
+  KEY `tenants_estado_suscripcion_vence_el_index` (`estado`,`suscripcion_vence_el`),
+  CONSTRAINT `tenants_business_category_id_foreign` FOREIGN KEY (`business_category_id`) REFERENCES `business_categories` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `tenants_plan_id_foreign` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla `users`
+CREATE TABLE `users` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `nombre` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `apellido` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email_verified_at` timestamp NULL DEFAULT NULL,
+  `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rol` enum('dueno','admin','profesional') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'profesional',
+  `foto` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `telefono` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT '1',
+  `remember_token` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `users_email_unique` (`email`),
+  KEY `users_tenant_id_index` (`tenant_id`),
+  CONSTRAINT `users_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
