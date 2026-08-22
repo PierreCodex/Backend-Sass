@@ -46,7 +46,7 @@ test('el registro crea tenant y dueño atómicamente, sin sesión y sin BD de te
     $manager = $tenant->database()->manager();
     expect($manager->databaseExists('tenant_'.$tenant->id))->toBeFalse();
 
-    Mail::assertSent(VerificarCorreoMail::class, fn ($mail) => $mail->hasTo('maria@correo.pe'));
+    Mail::assertQueued(VerificarCorreoMail::class, fn ($mail) => $mail->hasTo('maria@correo.pe'));
 });
 
 test('email repetido → 422 errors.email y no queda tenant huérfano', function () {

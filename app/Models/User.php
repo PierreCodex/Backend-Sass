@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Notifications\RestablecerPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -52,5 +53,14 @@ class User extends Authenticatable
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    /**
+     * Usa la versión encolada de la notificación de Laravel: el correo sale
+     * por el worker, no dentro de la respuesta de /forgot-password.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new RestablecerPasswordNotification($token));
     }
 }

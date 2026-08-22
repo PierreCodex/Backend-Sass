@@ -34,7 +34,8 @@ Formato de entrada:
   idéntico: la tienda responde 404 hasta que el paso 1 fija el slug.
 - **Por qué**: un slug basura no aporta nada si el id ya nombra la BD.
 - **Ref**: CLAUDE.md § Decisiones de producto (id/slug).
-- **Estado**: pendiente (aclarar la frase en api-contract.md y registro.md).
+- **Estado**: **aceptado** (2026-08-16, Sprint 0) — api-contract.md,
+  registro.md y plan-sprints.md ya dicen `slug NULL`.
 
 ## [Sprint 0] Login con credenciales malas → 422 `errors.email`
 
@@ -43,7 +44,9 @@ Formato de entrada:
   token o con token revocado, que es lo que el interceptor redirige a
   /login. Confirmar que el formulario de login pinta ese 422.
 - **Por qué**: el contrato no fija el código del login fallido.
-- **Estado**: pendiente.
+- **Estado**: **aceptado** (2026-08-16, Sprint 0) — documentado en
+  api-contract.md § Autenticación; el formulario de login pinta ese 422 bajo
+  el campo email (verificado en el navegador).
 
 ## [Sprint 0] Texto comercial del plan Pro
 
@@ -55,3 +58,21 @@ Formato de entrada:
   no copió el texto completo de Pro.
 - **Ref**: §1.5 de discrepancias (descripcion pasó a columna de `planes`).
 - **Estado**: pendiente.
+
+## [Sprint 0] `POST /email/reenviar` tiene cooldown por correo → 429 con `retry_after`
+
+- **Qué**: el contrato solo documenta `200` para `/email/reenviar`. La
+  implementación añade un límite **por correo** (1 cada 60 s, 5 por hora)
+  que responde `429 { message, retry_after }`, con `retry_after` en
+  segundos. El `200` también devuelve `retry_after: 60` para que el botón
+  «Reenviar» del panel «Revisa tu correo» arranque su cuenta atrás sin
+  adivinar el valor.
+- **Por qué**: el `throttle` de la ruta es por IP y no impide usar el
+  formulario para reventar la bandeja de un tercero, ni protege la cuota de
+  Resend. El límite se cuenta antes de mirar si el usuario existe, así que
+  sigue sin filtrar qué correos están registrados.
+- **Ref**: `VerificacionCorreoController::reenviar`, `vistas/registro.md` §
+  «Revisa tu correo».
+- **Estado**: **aceptado** (2026-08-16, Sprint 0) — documentado en
+  api-contract.md § Autenticación, y el botón «Reenviar» ya usa el
+  `retry_after` de la respuesta.

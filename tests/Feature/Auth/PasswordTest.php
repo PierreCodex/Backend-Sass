@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
+use App\Notifications\RestablecerPasswordNotification;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
@@ -20,14 +20,14 @@ test('forgot-password responde 200 exista o no el correo', function () {
     $this->postJson('/api/forgot-password', ['email' => 'maria@correo.pe'])->assertOk();
     $this->postJson('/api/forgot-password', ['email' => 'nadie@correo.pe'])->assertOk();
 
-    Notification::assertSentTo($this->user, ResetPassword::class);
+    Notification::assertSentTo($this->user, RestablecerPasswordNotification::class);
 });
 
 test('reset con token válido cambia la contraseña y permite el login', function () {
     $this->postJson('/api/forgot-password', ['email' => 'maria@correo.pe']);
 
     $token = null;
-    Notification::assertSentTo($this->user, ResetPassword::class, function ($notification) use (&$token) {
+    Notification::assertSentTo($this->user, RestablecerPasswordNotification::class, function ($notification) use (&$token) {
         $token = $notification->token;
 
         return true;

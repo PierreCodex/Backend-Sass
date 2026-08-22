@@ -39,6 +39,9 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   de enrutamiento, **jamás autorización**: SIEMPRE validar que coincide con el
   tenant del usuario dueño del token. Si conviene derivarlo del propio token,
   la cabecera puede volverse redundante — decidirlo al implementar auth
+- Correo por **Resend** (`resend/resend-laravel`, `MAIL_MAILER=resend`,
+  `RESEND_API_KEY`). Verificación y reset se envían **encolados**
+  (`ShouldQueue`): sin worker no sale ningún correo
 - MySQL 8 / MariaDB. Zona horaria por tenant en `tenants.zona_horaria`
 
 ## Contratos ya fijados por el frontend (cumplir tal cual)

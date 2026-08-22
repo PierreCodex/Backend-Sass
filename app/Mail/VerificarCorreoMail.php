@@ -7,18 +7,22 @@ namespace App\Mail;
 use App\Models\User;
 use App\Support\FirmaVerificacion;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class VerificarCorreoMail extends Mailable
+/**
+ * ShouldQueue: el envío es una llamada HTTP a Resend y no debe bloquear la
+ * respuesta de /register ni tumbarla si Resend falla. Requiere un worker
+ * (`php artisan queue:work`) - el mismo que ya necesita el provisioning.
+ */
+class VerificarCorreoMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public User $user)
-    {
-    }
+    public function __construct(public User $user) {}
 
     public function envelope(): Envelope
     {

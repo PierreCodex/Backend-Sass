@@ -59,5 +59,43 @@ test('reenviar responde 200 exista o no el correo (no filtra usuarios)', functio
     $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])->assertOk();
     $this->postJson('/api/email/reenviar', ['email' => 'nadie@correo.pe'])->assertOk();
 
-    Mail::assertSentCount(1);
+    Mail::assertQueuedCount(1);
+});
+
+test('reenviar dos veces seguidas al mismo correo → 429 con retry_after', function () {
+    Mail::fake();
+
+    $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])
+        ->assertOk()
+        ->assertJsonPath('retry_after', 60);
+
+    $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])
+        ->assertStatus(429)
+        ->assertJsonStructure(['message', 'retry_after']);
+
+    Mail::assertQueuedCount(1);
+});
+
+test('el cooldown de reenviar es por correo, no global', function () {
+    Mail::fake();
+
+    $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])->assertOk();
+    $this->postJson('/api/email/reenviar', ['email' => 'otra@correo.pe'])->assertOk();
+});
+
+test('pasado el cooldown se puede volver a pedir el enlace', function () {
+    Mail::fake();
+
+    $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])->assertOk();
+
+    $this->travel(61)->seconds();
+
+    $this->postJson('/api/email/reenviar', ['email' => 'maria@correo.pe'])->assertOk();
+
+    Mail::assertQueuedCount(2);
+});
+
+test('el correo inexistente también respeta el cooldown (no filtra usuarios)', function () {
+    $this->postJson('/api/email/reenviar', ['email' => 'nadie@correo.pe'])->assertOk();
+    $this->postJson('/api/email/reenviar', ['email' => 'nadie@correo.pe'])->assertStatus(429);
 });
