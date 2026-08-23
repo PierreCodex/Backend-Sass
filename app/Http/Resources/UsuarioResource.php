@@ -33,12 +33,21 @@ class UsuarioResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => trim($this->nombre.' '.$this->apellido),
+            // Sueltos ADEMÁS de `name`: es como los edita Mi perfil, y partir
+            // `name` por el espacio es lossy ("Ana María Quispe").
+            'nombre' => $this->nombre,
+            'apellido' => $this->apellido,
             'email' => $this->email,
+            'telefono' => $this->telefono,
+            'documento' => $this->documento,
             'avatar_url' => $this->foto,
             'rol' => $this->rol,
             'negocio' => $this->whenLoaded('tenant', fn () => [
                 'id' => $this->tenant->id,
                 'nombre' => $this->tenant->nombre,
+                // Null hasta el paso 1 del onboarding. Sin él, el panel no
+                // puede construir el enlace a la tienda.
+                'slug' => $this->tenant->slug,
                 'estado' => self::ESTADOS[$this->tenant->estado] ?? 'prueba',
             ]),
         ];
