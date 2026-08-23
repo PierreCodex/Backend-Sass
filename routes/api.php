@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
 use Illuminate\Support\Facades\Route;
 
@@ -44,11 +45,17 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
 
+    // Cambiar la contraseña es una acción de SEGURIDAD: no se bloquea por
+    // deber una suscripción. Editar el perfil sí es panel, y va tras la puerta.
+    Route::put('/user/password', [PerfilController::class, 'password']);
+
     /*
      * El panel propiamente dicho: 403 suscripcion_vencida si el tenant está
      * suspendido.
      */
     Route::middleware('suscripcion.activa')->group(function () {
+        Route::put('/user', [PerfilController::class, 'actualizar']);
+
         Route::get('/onboarding', [OnboardingController::class, 'show']);
         Route::post('/onboarding/nombre', [OnboardingController::class, 'nombre']);
         Route::put('/onboarding/pasos/{clave}', [OnboardingController::class, 'marcarPaso']);

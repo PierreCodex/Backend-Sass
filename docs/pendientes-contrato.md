@@ -101,3 +101,32 @@ Formato de entrada:
   del contrato), `SuscripcionActiva`, `AuthController::login`,
   `UsuarioResource`.
 - **Estado**: pendiente.
+
+
+## [Sprint 0] Mi perfil: `PUT /user`, `PUT /user/password` y el `Usuario` completo
+
+- **Qué**: implementados los dos endpoints del contrato, más los campos que
+  `GET /user` no emitía: `nombre` y `apellido` **sueltos**, `telefono`,
+  `documento` y `negocio.slug`. Nueva columna `users.documento`
+  (VARCHAR 20, nullable, sin UNIQUE).
+- **Por qué**: la pantalla de Mi perfil estaba maquetada y leyendo real, pero
+  guardaba contra un mock. Sin `nombre`/`apellido` sueltos, el formulario
+  tenía que partir `name` por el espacio, que es lossy: «Ana María Quispe»
+  se guardaba como nombre «Ana» y apellido «María Quispe». Sin
+  `negocio.slug` el panel no puede construir el enlace a la tienda.
+- **Divergencias que conviene fijar en el contrato**:
+  1. `PUT /user/password` responde `200 { message }` y queda **fuera** de la
+     puerta de suscripción vencida: cambiar la contraseña es una acción de
+     seguridad y no debe bloquearse por deber una cuota. `PUT /user` sí va
+     detrás de la puerta.
+  2. `password` valida `different:password_actual`.
+  3. `telefono` exige el mismo `+51` + 9 dígitos que el registro; `documento`
+     acepta hasta 20 caracteres alfanuméricos con guiones (un carné de
+     extranjería no tiene 8 dígitos).
+- **Nota de planificación**: **Mi perfil no figura en ningún módulo de
+  `plan-sprints.md`**. Se coló entre el Sprint 0 (auth) y el 2.B
+  (Configuración, que es del negocio y no de la persona). Conviene añadirlo
+  al plan como parte del 0.B, que es donde acabó implementándose.
+- **Ref**: `vistas/perfil.md`, contrato § Autenticación y § Usuario,
+  `PerfilService` (propagación a `profesionales`).
+- **Estado**: pendiente.
