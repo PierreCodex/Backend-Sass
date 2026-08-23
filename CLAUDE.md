@@ -19,6 +19,23 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   arrancar cada sesión para saber qué módulo toca. Solo lectura.
 - Lo que este repo necesite del contrato se anota en
   `docs/pendientes-contrato.md`; nunca se edita api-contract.md desde aquí.
+- **Tablero de las dos sesiones**: `F:\PERSONAL_JEAN\mi-saas\docs\estado.md`
+  — **LEERLO AL ARRANCAR CADA SESIÓN**, antes que el plan de sprints: dice
+  qué está hecho y qué tiene en la mano la otra sesión ahora mismo. Reglas:
+  - Desde aquí se edita **solo** la columna BACKEND, la sección «Sesión
+    BACKEND» y las líneas de Traspasos dirigidas BE → FE. Lo demás se lee.
+  - Un módulo pasa a ✅ **al cerrarlo**, no al empezarlo (definición de
+    terminado: `plan-sprints.md` §2).
+  - Lo que este lado necesite del frontend va en **Traspasos** con fecha;
+    es el único sitio donde se le pide algo a la otra sesión.
+- **`git` solo en este repo.** La sesión de frontend hace `git` solo en
+  `mi-saas`. Nunca crear ramas ni commitear en el repo ajeno: el 2026-08-22
+  las dos sesiones escribieron sobre `backend-sass` y no se perdió trabajo
+  de milagro.
+- **Una rama por módulo**: `sprint-N/modulo` (p. ej. `sprint-1/categorias`),
+  salida de `main`. No se mergea hasta que los tests del módulo estén en
+  verde, incluido el de aislación entre tenants. Merge con `--no-ff` para
+  que cada módulo sea revertible de un tirón.
 
 **Jerarquía ante conflicto**, de mayor a menor:
 1. `docs/discrepancias.md` (congelado) — las decisiones ya cerradas
