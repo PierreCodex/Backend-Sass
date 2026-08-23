@@ -36,10 +36,21 @@ Route::middleware('throttle:20,1')->group(function () {
 */
 
 Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
+    /*
+     * Accesible AUNQUE la suscripción esté vencida. Si se cortara todo, el
+     * negocio suspendido no tendría por dónde pagar. Aquí van también
+     * /plan y /soporte cuando lleguen (Sprint 7).
+     */
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
 
-    Route::get('/onboarding', [OnboardingController::class, 'show']);
-    Route::post('/onboarding/nombre', [OnboardingController::class, 'nombre']);
-    Route::put('/onboarding/pasos/{clave}', [OnboardingController::class, 'marcarPaso']);
+    /*
+     * El panel propiamente dicho: 403 suscripcion_vencida si el tenant está
+     * suspendido.
+     */
+    Route::middleware('suscripcion.activa')->group(function () {
+        Route::get('/onboarding', [OnboardingController::class, 'show']);
+        Route::post('/onboarding/nombre', [OnboardingController::class, 'nombre']);
+        Route::put('/onboarding/pasos/{clave}', [OnboardingController::class, 'marcarPaso']);
+    });
 });

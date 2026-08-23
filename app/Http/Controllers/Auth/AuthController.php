@@ -10,6 +10,7 @@ use App\Http\Resources\UsuarioResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -38,6 +39,19 @@ class AuthController extends Controller
             ], 403);
         }
 
+        /*
+         * Ciclo de vida del negocio. `suspendida` NO se bloquea aquí a
+         * propósito: el dueño entra y paga (el corte del resto del panel lo
+         * hace el middleware `suscripcion.activa`). Los estados de purga sí
+         * cierran la puerta: la BD del tenant está en camino de desaparecer.
+         */
+        if (in_array($user->tenant?->estado, ['purga_pendiente', 'eliminada'], true)) {
+            return response()->json([
+                'message' => 'Esta cuenta fue dada de baja. Escríbenos si necesitas recuperarla.',
+                'codigo' => 'cuenta_dada_de_baja',
+            ], 403);
+        }
+
         $token = $user->createToken('panel')->plainTextToken;
 
         return response()->json([
@@ -51,7 +65,7 @@ class AuthController extends Controller
     /**
      * Revoca SOLO el token en uso, no todos (contrato).
      */
-    public function logout(Request $request): \Illuminate\Http\Response
+    public function logout(Request $request): Response
     {
         $request->user()->currentAccessToken()->delete();
 

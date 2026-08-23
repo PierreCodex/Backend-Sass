@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\SuscripcionActiva;
+use App\Http\Middleware\ValidarTenantDelToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,7 +15,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'tenant.token' => App\Http\Middleware\ValidarTenantDelToken::class,
+            'tenant.token' => ValidarTenantDelToken::class,
+            'suscripcion.activa' => SuscripcionActiva::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
