@@ -14,6 +14,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class UsuarioResource extends JsonResource
 {
+    /**
+     * §1.6 de discrepancias: `tenants.estado` tiene 6 valores de lifecycle,
+     * el contrato solo 3. El almacenamiento manda; el Resource traduce, y el
+     * estado interno nunca sale de la API.
+     */
+    private const ESTADOS = [
+        'registrada' => 'prueba',
+        'prueba' => 'prueba',
+        'activa' => 'activa',
+        'suspendida' => 'vencida',
+        'purga_pendiente' => 'vencida',
+        'eliminada' => 'vencida',
+    ];
+
     public function toArray(Request $request): array
     {
         return [
@@ -25,6 +39,7 @@ class UsuarioResource extends JsonResource
             'negocio' => $this->whenLoaded('tenant', fn () => [
                 'id' => $this->tenant->id,
                 'nombre' => $this->tenant->nombre,
+                'estado' => self::ESTADOS[$this->tenant->estado] ?? 'prueba',
             ]),
         ];
     }

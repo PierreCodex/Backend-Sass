@@ -76,3 +76,28 @@ Formato de entrada:
 - **Estado**: **aceptado** (2026-08-16, Sprint 0) — documentado en
   api-contract.md § Autenticación, y el botón «Reenviar» ya usa el
   `retry_after` de la respuesta.
+
+
+## [Sprint 0] Suscripción vencida: `usuario.negocio.estado` y `403 suscripcion_vencida`
+
+- **Qué**: tres cosas que el contrato no cubre.
+  1. `Usuario.negocio` gana **`estado`** (`prueba` | `activa` | `vencida`),
+     con el mapeo de §1.6 de discrepancias. Va en la respuesta de `/login` y
+     de `GET /user`.
+  2. Con el negocio suspendido, **todo el panel responde
+     `403 { message, codigo: "suscripcion_vencida" }`**, salvo `GET /user`,
+     `POST /logout` y —cuando existan— Mi Plan y Soporte.
+  3. Con el negocio en purga, **`/login` responde
+     `403 { message, codigo: "cuenta_dada_de_baja" }`** y no emite token.
+- **Por qué**: traspaso FE → BE del 2026-08-22 — el login no miraba
+  `tenants.estado`, así que un negocio suspendido usaba el panel completo y
+  no había puerta de cobro. Decisión de producto (2026-08-22): el suspendido
+  **entra y paga**; bloquearle el login lo deja sin forma de regularizar y
+  convierte cada renovación en una conversación de WhatsApp. El `codigo`
+  existe para que el frontend distinga esta pared de un permiso insuficiente
+  y pinte el aviso con el botón de renovar; el `estado` del usuario le
+  permite pintarlo sin esperar a que falle una petición.
+- **Ref**: §1.6 de discrepancias (mapeo de los 6 estados de lifecycle a los 3
+  del contrato), `SuscripcionActiva`, `AuthController::login`,
+  `UsuarioResource`.
+- **Estado**: pendiente.

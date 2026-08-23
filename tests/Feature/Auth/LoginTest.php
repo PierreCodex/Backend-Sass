@@ -88,3 +88,71 @@ test('X-Tenant que no coincide con el tenant del token → 404, nunca 403', func
         ->getJson('/api/user')
         ->assertOk();
 });
+
+/*
+|--------------------------------------------------------------------------
+| Ciclo de vida del negocio (traspaso FE → BE del 2026-08-22)
+|
+| Decisión de producto: el suspendido ENTRA y paga; si se le cierra el login
+| no tiene por dónde regularizar. El corte del panel lo hace el middleware
+| `suscripcion.activa`. Los estados de purga sí bloquean el login.
+|--------------------------------------------------------------------------
+*/
+
+test('tenant suspendido → login OK, y el usuario ve negocio.estado = vencida', function () {
+    verificarCorreoDe($this->user);
+    $this->user->tenant->update(['estado' => 'suspendida']);
+
+    $this->postJson('/api/login', ['email' => 'maria@correo.pe', 'password' => 'secreta123'])
+        ->assertOk()
+        ->assertJsonPath('data.usuario.negocio.estado', 'vencida');
+});
+
+test('tenant suspendido → el panel responde 403 suscripcion_vencida', function () {
+    verificarCorreoDe($this->user);
+    $this->user->tenant->update(['estado' => 'suspendida']);
+
+    $token = $this->postJson('/api/login', [
+        'email' => 'maria@correo.pe',
+        'password' => 'secreta123',
+    ])->json('data.token');
+
+    $this->withToken($token)->getJson('/api/onboarding')
+        ->assertStatus(403)
+        ->assertJsonPath('codigo', 'suscripcion_vencida');
+});
+
+test('tenant suspendido: /user y /logout siguen abiertos (por ahí paga)', function () {
+    verificarCorreoDe($this->user);
+    $this->user->tenant->update(['estado' => 'suspendida']);
+
+    $token = $this->postJson('/api/login', [
+        'email' => 'maria@correo.pe',
+        'password' => 'secreta123',
+    ])->json('data.token');
+
+    $this->withToken($token)->getJson('/api/user')->assertOk();
+    $this->withToken($token)->postJson('/api/logout')->assertNoContent();
+});
+
+test('tenant en purga → 403 y NO se emite token', function () {
+    verificarCorreoDe($this->user);
+    $this->user->tenant->update(['estado' => 'purga_pendiente']);
+
+    $this->postJson('/api/login', ['email' => 'maria@correo.pe', 'password' => 'secreta123'])
+        ->assertStatus(403)
+        ->assertJsonPath('codigo', 'cuenta_dada_de_baja')
+        ->assertJsonMissingPath('data.token');
+});
+
+test('tenant activo → el panel no se corta', function () {
+    verificarCorreoDe($this->user);
+    $this->user->tenant->update(['estado' => 'activa']);
+
+    $token = $this->postJson('/api/login', [
+        'email' => 'maria@correo.pe',
+        'password' => 'secreta123',
+    ])->json('data.token');
+
+    $this->withToken($token)->getJson('/api/onboarding')->assertOk();
+});
