@@ -73,6 +73,14 @@ class ServicioRequest extends FormRequest
             'galeria_conservar' => ['nullable', 'array'],
             'galeria_conservar.*' => ['integer'],
 
+            /*
+             * Un array VACIO no viaja en multipart: quitar las cuatro fotos
+             * llega como campo ausente, que significa "no borres nada". Hacen
+             * falta banderas explicitas, porque la ausencia ya esta ocupada.
+             */
+            'galeria_vaciar' => ['nullable', 'boolean'],
+            'imagen_principal_eliminar' => ['nullable', 'boolean'],
+
             'empleado_ids' => ['nullable', 'array'],
             'empleado_ids.*' => ['integer', Rule::exists('profesionales', 'id')->whereNull('deleted_at')],
         ];

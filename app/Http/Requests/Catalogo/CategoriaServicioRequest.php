@@ -32,6 +32,13 @@ class CategoriaServicioRequest extends FormRequest
             'color' => ['nullable', 'string', 'max:20'],
             'orden' => ['nullable', 'integer', 'min:0'],
             'imagen' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:2048'],
+
+            /*
+             * No mandar `imagen` significa "dejala como esta" — si no, cada
+             * edicion borraria la foto. Por eso quitarla necesita un campo
+             * propio: la ausencia ya tiene otro significado.
+             */
+            'imagen_eliminar' => ['nullable', 'boolean'],
         ];
     }
 

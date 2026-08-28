@@ -345,3 +345,28 @@ borrados; el de un servicio vivo sigue dando 422.
 - **Ref**: `vistas/clientes.md`, `docs/discrepancias.md` § firstOrCreate,
   migración `tenant/2026_08_27_000002_add_telefono_normalizado_to_clientes`.
 - **Estado**: pendiente.
+
+---
+
+## [Sprint 1] Banderas para quitar archivos en multipart
+
+- **Qué**: tres campos nuevos, todos opcionales y booleanos:
+  `imagen_eliminar` (categorías), `imagen_principal_eliminar` y
+  `galeria_vaciar` (servicios).
+
+- **Por qué**: en multipart, **no mandar un archivo significa «déjalo como
+  está»** — es obligatorio que sea así, o cada edición borraría la foto que
+  el usuario no volvió a subir. Pero eso deja sin forma de expresar «quítala»:
+  la ausencia ya está ocupada.
+
+  Con la galería es aún más agudo, y lo detectó la sesión de frontend: **un
+  array vacío no viaja en multipart**. Quitar las cuatro fotos llega al
+  backend como campo ausente, o sea «no borres nada». Su apaño era mandar
+  `galeria_conservar[0]=0` como marcador, apoyándose en que el
+  `auto_increment` empieza en 1 — funcionaba, pero era un acuerdo tácito que
+  se rompe el día que alguien siembre datos con id 0.
+
+- **Ref**: `vistas/categorias.md`, `vistas/servicios.md`, traspasos FE → BE
+  del 2026-08-27.
+- **Estado**: pendiente (anotarlo en el contrato § CRUD estándar, porque
+  aplica a todo recurso con `FormData`: empleados y locales tendrán lo mismo).
