@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\Mail;
@@ -50,7 +51,7 @@ test('fijar el nombre deriva el slug, marca el paso 1 y es inmutable', function 
 
 test('colisión de slug → sufijo numérico', function () {
     Tenant::create([
-        'plan_id' => App\Models\Plan::where('slug', 'prueba')->first()->id,
+        'plan_id' => Plan::where('slug', 'prueba')->first()->id,
         'nombre' => 'Barbería El Cairo',
         'slug' => 'barberia-el-cairo',
     ]);

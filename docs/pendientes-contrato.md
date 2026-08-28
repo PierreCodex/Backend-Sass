@@ -236,3 +236,54 @@ Formato de entrada:
 
 - **Ref**: `vistas/categorias.md`, contrato § CRUD estándar.
 - **Estado**: pendiente.
+
+---
+
+## [Sprint 1] Servicios: respuestas a los pendientes de la ficha
+
+La ficha `vistas/servicios.md` cerraba con seis preguntas al backend. Las
+respondo aquí; conviene volcarlas a la ficha en el ritual de cierre.
+
+1. **«¿Qué responde el backend al eliminar un servicio con citas?»**
+   **204, siempre.** Es soft delete. La ficha esperaba un 409, pero bloquear
+   deja al dueño con un catálogo que no puede limpiar: quien deja de ofrecer
+   un corte tiene derecho a quitarlo de la lista. El historial queda intacto
+   porque la fila no desaparece, y `cita_servicio` ya congela `precio` y
+   `duracion_min` al reservar, así que ninguna cita vieja cambia de importe.
+
+2. **«¿Cómo quieres manejar el borrado de imágenes al editar?»**
+   La ficha proponía `galeria_conservar[]` con **URLs** y ofrecía cambiarlo.
+   **Cambiado a IDs.** El `galeria` de la respuesta pasa de `string[]` a
+   `{ id, url }[]`, y el formulario devuelve los ids que conserva. Casar por
+   URL obliga al backend a revertir URL → ruta, y eso se rompe **en silencio**
+   si cambia `APP_URL` o el disco — y lo que se pierde son las fotos del
+   negocio. Con ids no hay nada que revertir.
+   **No mandar `galeria_conservar` no borra nada**: que el formulario omita el
+   campo no puede significar «bórralo todo».
+
+3. **«¿Dónde se cambia `activo`?»** El backend lo **acepta opcional** en
+   `POST`/`PUT` y lo emite siempre. Al crear entra `true` por defecto de la
+   columna. Falta decidir el control: switch en la fila de la tabla es lo
+   natural, dado que el formulario no lo tiene.
+
+4. **`max_sesiones`**: obligatorio cuando `tipo` es `sesiones` o `paquete`,
+   ignorado en los demás. Al cambiar el tipo a `normal` el valor **se limpia**,
+   no se queda de fantasma. Falta añadir el campo al formulario, visible solo
+   cuando el tipo lo pida.
+
+5. **«¿El servicio se asigna también a locales concretos?»** No en v1. El
+   esquema no tiene pivote servicio↔local (sí `local_profesional`), así que un
+   servicio es del negocio entero. Revisar en el Sprint 3.
+
+6. **«¿Existe la página pública que menciona la ayuda de la galería?»** Sí:
+   es la tienda pública del Sprint 5 (`/publico/{slug}`). La columna
+   `visible_publico` ya existe y el Resource la emite.
+
+**Nombre repetido de un servicio borrado**: `servicios.nombre` es UNIQUE y el
+índice no distingue los borrados. Crear un servicio cuyo nombre ya tuvo otro
+eliminado **restaura la fila** en vez de fallar — el dueño leería «ya existe»
+mirando una lista donde no está. El `unique` de validación ignora los
+borrados; el de un servicio vivo sigue dando 422.
+
+- **Ref**: `vistas/servicios.md` § Pendiente, `ServicioService`.
+- **Estado**: pendiente.
