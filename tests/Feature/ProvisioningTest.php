@@ -1,15 +1,17 @@
 <?php
 
 use App\Jobs\ProvisionTenantDatabase;
+use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\PlanSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
     $this->seed(PlanSeeder::class);
-    $this->planPrueba = App\Models\Plan::where('slug', 'prueba')->firstOrFail();
+    $this->planPrueba = Plan::where('slug', 'prueba')->firstOrFail();
 });
 
 afterEach(fn () => limpiarBasesDeTenants());
@@ -62,7 +64,7 @@ test('el job de provisioning crea la BD, migra todas las tablas y deja al dueño
 
     $tenant->run(function () use ($dueno) {
         foreach ([
-            'profesionales', 'clientes', 'locales', 'local_profesional',
+            'roles', 'profesionales', 'clientes', 'locales', 'local_profesional',
             'categoria_servicios', 'servicios', 'servicio_imagenes',
             'servicio_profesional', 'productos', 'citas', 'cita_servicio',
             'cita_producto', 'cita_pagos', 'grupos', 'grupo_local',
@@ -84,7 +86,7 @@ test('el job de provisioning crea la BD, migra todas las tablas y deja al dueño
     expect($tenant->db_provisionada)->toBeTrue()
         ->and($tenant->estado)->toBe('prueba')
         ->and($tenant->suscripcion_vence_el->toDateString())
-            ->toBe(now()->addDays(7)->toDateString());
+        ->toBe(now()->addDays(7)->toDateString());
 });
 
 test('re-lanzar el job de provisioning es idempotente', function () {
@@ -95,7 +97,8 @@ test('re-lanzar el job de provisioning es idempotente', function () {
     (new ProvisionTenantDatabase($tenant))->handle();
 
     $tenant->run(function () use ($dueno) {
-        expect(DB::table('profesionales')->where('central_user_id', $dueno->id)->count())->toBe(1);
+        expect(DB::table('profesionales')->where('central_user_id', $dueno->id)->count())->toBe(1)
+            ->and(DB::table('roles')->count())->toBe(3);
     });
 });
 
@@ -120,4 +123,51 @@ test('aislación básica: los datos del tenant A no existen en el tenant B', fun
 
     expect($clientesEnA)->toBe(1)
         ->and($clientesEnB)->toBe(0);
+});
+
+test('el provisioning siembra los tres roles de sistema y le da el de dueño al dueño', function () {
+    $tenant = crearTenantRegistrado($this->planPrueba);
+    $dueno = crearDueno($tenant);
+
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () use ($dueno) {
+        $roles = DB::table('roles')->orderBy('id')->get()->keyBy('clave');
+
+        expect($roles->keys()->all())->toBe(['dueno', 'admin', 'profesional']);
+
+        // Los tres son de sistema: no se borran nunca (siempre tiene que haber
+        // dónde meter a un barbero). Solo el de dueño tampoco se edita.
+        $roles->each(fn ($rol) => expect((bool) $rol->sistema)->toBeTrue());
+
+        // NULL mientras el negocio no los toque: es lo que permite mejorarles
+        // los presets en una versión futura sin pisar al que personalizó.
+        $roles->each(fn ($rol) => expect($rol->editado_at)->toBeNull());
+
+        // La facturación no se delega ni a la mano derecha del dueño.
+        $admin = json_decode($roles['admin']->permisos, true);
+        expect($admin['facturacion'])->toBeNull()
+            ->and($admin['caja'])->toBe('gestionar');
+
+        // El profesional ve SUS citas, no las de sus compañeros.
+        expect((bool) $roles['profesional']->solo_propios)->toBeTrue()
+            ->and((bool) $roles['admin']->solo_propios)->toBeFalse();
+
+        $perfil = DB::table('profesionales')->where('central_user_id', $dueno->id)->first();
+        expect($perfil->rol_id)->toBe((int) $roles['dueno']->id);
+    });
+});
+
+test('un rol en uso no se puede borrar', function () {
+    $tenant = crearTenantRegistrado($this->planPrueba);
+    crearDueno($tenant);
+
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    // La barandilla vive en la BD (restrictOnDelete), no solo en el service:
+    // borrar el rol de alguien lo dejaría sin permisos de golpe.
+    $tenant->run(function () {
+        expect(fn () => DB::table('roles')->where('clave', 'dueno')->delete())
+            ->toThrow(QueryException::class);
+    });
 });

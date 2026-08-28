@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\Tenant;
+use App\Support\RolesSistema;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -18,19 +19,17 @@ use Illuminate\Support\Facades\DB;
  * Se encola al VERIFICAR EL CORREO del dueño — nunca en el registro, sin
  * esperar al onboarding. Idempotente: re-lanzarlo no duplica nada.
  *
- * Pasos: crear la BD (tenant_{id}) → migrar → fila del dueño en
- * `profesionales` (atiende=1) → db_provisionada=1, estado='prueba',
- * prueba de 7 días.
+ * Pasos: crear la BD (tenant_{id}) → migrar → sembrar los tres roles de
+ * sistema → fila del dueño en `profesionales` (atiende=1, rol dueño) →
+ * db_provisionada=1, estado='prueba', prueba de 7 días.
  */
-class ProvisionTenantDatabase implements ShouldQueue, ShouldBeUnique
+class ProvisionTenantDatabase implements ShouldBeUnique, ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public int $tries = 3;
 
-    public function __construct(public Tenant $tenant)
-    {
-    }
+    public function __construct(public Tenant $tenant) {}
 
     public function uniqueId(): string
     {
@@ -53,6 +52,22 @@ class ProvisionTenantDatabase implements ShouldQueue, ShouldBeUnique
 
         Artisan::call('tenants:migrate', ['--tenants' => [$tenant->id]]);
 
+        $tenant->run(function () {
+            foreach (RolesSistema::presets() as $rol) {
+                DB::table('roles')->updateOrInsert(
+                    ['clave' => $rol['clave']],
+                    [
+                        'nombre' => $rol['nombre'],
+                        'sistema' => $rol['sistema'],
+                        'solo_propios' => $rol['solo_propios'],
+                        'permisos' => json_encode($rol['permisos']),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]
+                );
+            }
+        });
+
         $dueno = $tenant->users()->where('rol', 'dueno')->orderBy('id')->first();
 
         if ($dueno !== null) {
@@ -64,6 +79,7 @@ class ProvisionTenantDatabase implements ShouldQueue, ShouldBeUnique
                 if (! $yaExiste) {
                     DB::table('profesionales')->insert([
                         'central_user_id' => $dueno->id,
+                        'rol_id' => DB::table('roles')->where('clave', 'dueno')->value('id'),
                         'nombre' => trim($dueno->nombre.' '.$dueno->apellido),
                         'telefono' => $dueno->telefono,
                         'atiende' => true,
