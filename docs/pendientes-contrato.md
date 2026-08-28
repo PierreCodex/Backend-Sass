@@ -130,3 +130,69 @@ Formato de entrada:
 - **Ref**: `vistas/perfil.md`, contrato § Autenticación y § Usuario,
   `PerfilService` (propagación a `profesionales`).
 - **Estado**: pendiente.
+
+---
+
+## [Sprint 2] Roles del negocio: los tres de sistema y los que crea el dueño
+
+- **Qué**: el negocio gestiona sus propios roles. Esquema ya escrito (tabla
+  `roles` en la BD del tenant + `profesionales.rol_id`); faltan endpoints,
+  pantalla y resolución de permisos, que van con Empleados en el Sprint 2.
+
+  **Modelo cerrado (2026-08-27):**
+
+  | Rol | Editar | Borrar | Duplicar |
+  |---|---|---|---|
+  | Dueño (`clave=dueno`) | ✗ | ✗ | ✗ |
+  | Administrador (`admin`) | ✓ | ✗ | ✓ |
+  | Profesional (`profesional`) | ✓ | ✗ | ✓ |
+  | Los que cree el dueño | ✓ | ✓ | ✓ |
+
+  - **Permisos: dos niveles por módulo**, `ver` y `gestionar` (`null` = sin
+    acceso). NO verbos CRUD por entidad: nadie en una barbería quiere «puede
+    crear clientes pero no borrarlos», y multiplica los tests por cuatro.
+    Guardados en JSON, así que añadir módulos no migra N bases.
+  - **`solo_propios`** es del rol, no de cada vista: un profesional que «ve
+    citas» ve las suyas; un administrador, las de todos. *Qué* puede tocar y
+    *sobre quién* son preguntas distintas.
+  - **`editado_at`** NULL mientras el negocio no toque el rol. Cuando se lance
+    un módulo nuevo y haya que añadirlo a los presets, el script solo pisa los
+    que siguen en NULL: a quien personalizó su rol no se le deshace la
+    decisión a su espalda.
+  - **`cargo`** (ya existe en `profesionales`) es texto libre y NO es permiso:
+    «Recepcionista» es un puesto, no un nivel de acceso. Los roles son pocos y
+    los pone el sistema; los nombres son infinitos y los pone el dueño.
+  - **Duplicar** = «guardar como»: copia las casillas de un rol para partir de
+    algo, con nombre nuevo (único por negocio). No es un segundo rol con el
+    mismo nombre. El de Dueño ni se duplica: sería fabricar un segundo
+    superusuario.
+  - **Barandillas**: solo el dueño gestiona roles (si pudiera un admin, se
+    crearía uno con todo y se lo asignaría — escalada en dos clics); nadie se
+    concede lo que no tiene; un rol en uso no se borra (lo impone la FK con
+    `restrictOnDelete`, no solo el service).
+  - **Facturación no se delega**: el preset de Administrador la trae en
+    `null`. Es lo único que separa al dueño de su mano derecha.
+
+- **Por qué**: el frontend está maquetando Administración y necesita saber si
+  el select de rol es fijo o dinámico. AgendaPro (competidor de referencia)
+  usa roles fijos del proveedor más permisos extra por persona; sus variantes
+  «(Sin edición)» **son** el nivel `ver`, presentado como roles aparte. Aquí
+  se modela con un solo campo, que da las mismas combinaciones con la mitad
+  de matriz.
+
+- **Lo que el contrato necesita**: `Usuario` debería emitir las capacidades ya
+  resueltas (`permisos` + `solo_propios`), no solo `rol`. Si el menú de Next
+  deriva los permisos por su cuenta, acaba habiendo dos matrices que divergen.
+  Ocultar una opción del menú NO es autorización: el backend responde 403
+  igual.
+
+- **Pendiente de decidir**: **alcance por local**. AgendaPro lo repite
+  («permisos sobre uno o más locales»), y `local_profesional` ya existe en las
+  migraciones, así que no haría falta tabla nueva. Pero `vistas/empleados.md`
+  lo descartó explícitamente («el empleado no se asigna a una sede en este
+  formulario»). Resolver en el Sprint 3, con Locales.
+
+- **Ref**: `vistas/empleados.md` § `rol` — valores (deja abierto «¿qué
+  permisos tiene cada uno?»), `app/Support/RolesSistema.php` (matriz de
+  presets), migración `tenant/2026_08_27_000001_create_roles_table.php`.
+- **Estado**: pendiente.
