@@ -1,6 +1,7 @@
 <?php
 
 use App\Mail\VerificarCorreoMail;
+use App\Models\BusinessCategory;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\Mail;
@@ -13,7 +14,7 @@ beforeEach(function () {
 function payloadRegistro(array $extra = []): array
 {
     return array_merge([
-        'tipo_negocio_id' => App\Models\BusinessCategory::first()->id,
+        'tipo_negocio_id' => BusinessCategory::first()->id,
         'rango_profesionales' => '3-5',
         'nombre' => 'María',
         'apellido' => 'Quispe',
