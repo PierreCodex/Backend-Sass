@@ -370,3 +370,56 @@ borrados; el de un servicio vivo sigue dando 422.
   del 2026-08-27.
 - **Estado**: pendiente (anotarlo en el contrato § CRUD estándar, porque
   aplica a todo recurso con `FormData`: empleados y locales tendrán lo mismo).
+
+---
+
+## [Backlog] Importar clientela desde Excel
+
+- **Qué**: subir un `.xlsx`/`.csv` y dar de alta clientes en bloque, con
+  previsualización antes de confirmar.
+
+- **Por qué NO es una comodidad**: es **activación**. Un salón que lleva cinco
+  años tiene su clientela en un cuaderno o en un Excel, y hasta que esos 200
+  nombres no estén dentro, el sistema le sirve a medias. Es de las cosas que
+  deciden si renueva al acabar la prueba.
+
+- **Formato: aceptar `.xlsx` de verdad, no solo CSV.** Parece más simple
+  pedir CSV y ahorrarse la dependencia, y es un error en este mercado: Excel
+  en español exporta CSV con **punto y coma** en vez de coma, y a menudo en
+  ANSI en vez de UTF-8. El dueño sube su archivo, no se parsea o entra
+  «MARÍA» como «MARÃ­A», y concluye que el sistema está roto. Requiere
+  `phpoffice/phpspreadsheet`; se aceptan ambos formatos pero el xlsx es el
+  que va a usar la gente.
+
+- **Columnas** (las mismas que el endpoint normal): `nombre` — la única
+  obligatoria —, `apellido`, `telefono`, `email`, `documento`,
+  `fecha_nacimiento`, `notas`.
+  El formato se documenta con una **plantilla descargable**, no explicándolo
+  en texto.
+
+- **Qué hacer con los repetidos** (el teléfono es la clave única):
+
+  | Caso | Acción |
+  |---|---|
+  | Teléfono nuevo | crear |
+  | Teléfono ya existente | **rellenar solo los campos vacíos**, nunca pisar los que ya tienen valor |
+  | Teléfono de una ficha borrada | restaurar, igual que el alta normal |
+  | Sin teléfono | crear, avisando de que no podrá cruzarse después |
+
+  Lo segundo es lo importante: si el dueño reimporta su Excel viejo por error,
+  no puede perder las notas y correos que lleva seis meses acumulando en el
+  panel.
+
+- **Dos pasos, no uno.** Subir devuelve un resumen — «180 nuevos, 20
+  actualizados, 3 filas con problemas: fila 45 sin nombre, fila 92 teléfono
+  repetido dentro del propio archivo» — y el dueño confirma. Sin
+  previsualización, alguien sube la columna equivocada, mete 200 fichas
+  basura, y limpiarlo obliga a entrar a mano en SU base de datos.
+
+- **Dónde**: no dentro de Clientes (cerrado), sino junto al **checklist de
+  onboarding** — «importa tu clientela» como paso opcional, que es cuando el
+  dueño lo necesita. Escribirlo pensando en que **Servicios y Productos
+  querrán lo mismo**, sin construir esas dos.
+
+- **Ref**: `vistas/clientes.md`, `vistas/onboarding.md`.
+- **Estado**: pendiente (backlog, sin sprint asignado).
