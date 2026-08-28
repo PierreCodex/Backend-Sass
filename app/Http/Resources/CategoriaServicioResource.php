@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Services\ImagenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class CategoriaServicioResource extends JsonResource
 {
@@ -23,9 +23,7 @@ class CategoriaServicioResource extends JsonResource
              * el dia que las imagenes se muevan a S3 cambia una linea de
              * configuracion en vez de cada fila de cada tenant.
              */
-            'imagen_url' => $this->imagen !== null
-                ? Storage::disk('public')->url($this->imagen)
-                : null,
+            'imagen_url' => ImagenService::url($this->imagen),
             /*
              * El dialogo de borrado lo necesita para avisar cuantos servicios
              * quedaran sin categoria (que NO es lo mismo que borrarlos).
