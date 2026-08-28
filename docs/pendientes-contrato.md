@@ -196,3 +196,43 @@ Formato de entrada:
   permisos tiene cada uno?»), `app/Support/RolesSistema.php` (matriz de
   presets), migración `tenant/2026_08_27_000001_create_roles_table.php`.
 - **Estado**: pendiente.
+
+---
+
+## [Sprint 1] Categorías de servicios: divergencias al implementar
+
+- **Qué**: implementado el CRUD de `/categorias-servicios` tal como lo define
+  la ficha y el contrato. Tres cosas conviene fijarlas en `vistas/categorias.md`:
+
+  1. **`DELETE` responde `204`, sin cuerpo** (contrato § CRUD estándar). La
+     ficha decía que el diálogo avisa cuántos servicios tiene asociados: ese
+     aviso lo pinta el frontend con el `servicios_count` que ya trae del
+     listado, no una respuesta del backend. Y el texto correcto es **«N
+     servicios quedarán sin categoría»**, no «se eliminarán N servicios»: la
+     FK es `nullOnDelete`, los servicios sobreviven.
+  2. **La columna `activo` existe en la migración** aunque la ficha diga que
+     «no existe». Se queda (quitarla obligaría a re-migrar cada tenant por
+     nada), pero el Resource no la emite y el Form Request no la acepta: la
+     categoría no se puede desactivar, como dice la ficha.
+  3. **`imagen` de entrada, `imagen_url` de salida.** El formulario sube el
+     archivo en el campo `imagen`; la API devuelve `imagen_url`. La columna
+     guarda la RUTA (`categorias/uuid.webp`), no la URL — el día que las
+     imágenes se muevan a S3 cambia una línea de configuración en vez de cada
+     fila de cada tenant.
+
+- **Pendientes de la ficha, resueltos así**:
+  - `orden` se edita solo con el número; arrastrar filas queda fuera de v1.
+  - **Falta un botón de «quitar color»** en el formulario: `input[type=color]`
+    no puede mandar vacío, así que hoy el color nunca podría volver a ser
+    `null` una vez puesto. Es trabajo de frontend; el backend ya acepta
+    `color: null`.
+
+- **Nota de seguridad**: las imágenes del catálogo van a **disco público**, no
+  al privado con URL firmada de la regla 7 del CLAUDE.md. Esa regla es para
+  los comprobantes de Yape; una foto de categoría acaba en la tienda pública,
+  donde el visitante no tiene sesión. El resto de la regla sí se mantiene:
+  re-encode con GD (lo guardado es una imagen de verdad, y se van los EXIF con
+  el GPS de la foto de móvil), nombre UUID y límite de 2 MB.
+
+- **Ref**: `vistas/categorias.md`, contrato § CRUD estándar.
+- **Estado**: pendiente.
