@@ -423,3 +423,31 @@ borrados; el de un servicio vivo sigue dando 422.
 
 - **Ref**: `vistas/clientes.md`, `vistas/onboarding.md`.
 - **Estado**: pendiente (backlog, sin sprint asignado).
+
+---
+
+## [Operación] Migrar tenants al desplegar: NO usar `tenants:migrate` a secas
+
+- **Qué**: usar `php artisan tenants:migrar-provisionados` en cada despliegue
+  que traiga una migración de tenant. **No** `tenants:migrate`.
+
+- **Por qué**: `tenants:migrate` de stancl recorre la tabla `tenants` entera
+  y aborta con `TenantDatabaseDoesNotExistException` en el primer negocio que
+  se registró y nunca verificó su correo — existe en la central, pero su base
+  no, porque el provisioning es perezoso (regla 2 del CLAUDE.md).
+
+  Eso no es un caso raro: **siempre habrá gente a medio registrar**. Y lo peor
+  no es que falle, es que aborta la tanda: los tenants que venían *después*
+  del primero sin base se quedan sin migrar, y nadie se entera hasta que a uno
+  de ellos le revienta una consulta en producción.
+
+  Salió al probar Clientes: el tenant de desarrollo daba
+  `Unknown column 'telefono_normalizado'` porque la migración nueva no le
+  había llegado.
+
+- **El comando nuevo** salta los no provisionados y migra **de uno en uno**,
+  para que el fallo de un negocio no deje sin migrar a los demás.
+
+- **Ref**: `app/Console/Commands/MigrarTenantsProvisionados.php`,
+  `plan-sprints.md` §4 (ritual de cierre de sprint).
+- **Estado**: hecho (2026-08-28).
