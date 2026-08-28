@@ -287,3 +287,61 @@ borrados; el de un servicio vivo sigue dando 422.
 
 - **Ref**: `vistas/servicios.md` § Pendiente, `ServicioService`.
 - **Estado**: pendiente.
+
+---
+
+## [Sprint 1] Clientes: el teléfono como clave natural
+
+- **Qué**: implementado el CRUD de `/clientes`. Una decisión de esquema que
+  no estaba en ninguna ficha y hacía falta: **columna
+  `clientes.telefono_normalizado`** (UNIQUE, dígitos sin prefijo país).
+
+- **Por qué**: `vistas/clientes.md` dice que `telefono` es **texto libre, sin
+  formato impuesto** — y enumera los datos reales de la app: `9768657567`,
+  `+51 981 912 809`, `904 169 872`, `999`. Pero `discrepancias.md` (congelado)
+  fija que **la clave natural del `firstOrCreate` de la reserva pública es el
+  teléfono**.
+
+  Las dos cosas juntas fabrican fichas duplicadas: `904169872` y
+  `904 169 872` son la misma persona y crearían dos fichas, cada una con medio
+  historial. Y como la reserva pública es concurrente, ni siquiera bastaba con
+  comprobarlo en el service: hace falta el UNIQUE para cerrar la carrera.
+
+  Solución: **dos columnas**. `telefono` se guarda tal cual lo escribió el
+  usuario (la ficha manda en lo que se muestra) y `telefono_normalizado` es la
+  que casa. El normalizado **no sale de la API**.
+
+  La normalización es deliberadamente conservadora: quita todo lo que no sea
+  dígito y el `51` del prefijo país. No inventa un `+51` que nadie escribió ni
+  recorta números cortos — un `999` de prueba sigue siendo suyo. **Casar de
+  más uniría fichas de dos personas distintas, que es peor que dejar dos
+  fichas de una.**
+
+- **Consecuencia para el contrato**: `POST /clientes` puede responder
+  `422 { errors: { telefono: ["Ya existe un cliente con ese teléfono."] } }`,
+  que la ficha no contemplaba. El formulario ya sabe pintarlo en su campo.
+
+- **Divergencias con la ficha**:
+  1. La ficha da por inventados `documento`, y no menciona `apellido`,
+     `fecha_nacimiento` ni `notas`. **Existen en la migración**, y
+     `discrepancias.md` dice que la reserva pública trae `apellido` y
+     `documento`. Se aceptan y se emiten; el formulario del panel puede
+     seguir pidiendo solo tres campos.
+  2. **Buscador y paginación se quedan** (la ficha los marcaba «por
+     confirmar»): el index los trae, y `search` cubre nombre, apellido, email
+     y teléfono — este último también **por el normalizado**, para que quien
+     escriba `904169872` encuentre al que se guardó como `904 169 872`.
+
+- **Respuesta a «¿el alta también ocurre desde el flujo de Citas?»**: sí. La
+  reserva pública hace `firstOrCreate` por teléfono (decisión congelada), y el
+  panel podrá crear cliente al vuelo al agendar. Ambos caminos comparten la
+  misma normalización.
+
+- **Pendiente de la ficha, resuelto**: borrar un cliente es **soft delete**
+  (sus citas lo referencian). Y volver a darlo de alta con el mismo teléfono
+  **restaura su ficha con su historial**, en vez de dar un 500 contra el
+  índice UNIQUE.
+
+- **Ref**: `vistas/clientes.md`, `docs/discrepancias.md` § firstOrCreate,
+  migración `tenant/2026_08_27_000002_add_telefono_normalizado_to_clientes`.
+- **Estado**: pendiente.

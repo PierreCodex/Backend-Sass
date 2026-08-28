@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
+use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
@@ -70,6 +71,7 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
                 ->parameters(['categorias-servicios' => 'categoria']);
 
             Route::apiResource('servicios', ServicioController::class);
+            Route::apiResource('clientes', ClienteController::class);
         });
 
         Route::get('/onboarding', [OnboardingController::class, 'show']);
