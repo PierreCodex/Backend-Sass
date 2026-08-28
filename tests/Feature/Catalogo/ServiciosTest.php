@@ -338,3 +338,33 @@ test('los servicios de otro negocio: 404, nunca 403', function () {
 test('sin sesión → 401', function () {
     $this->getJson('/api/servicios')->assertStatus(401);
 });
+
+test('galeria_vaciar quita todas las fotos, que un array vacío no puede', function () {
+    $creado = enviarServicio($this, servicioValido([
+        'galeria' => [
+            UploadedFile::fake()->image('uno.jpg', 200, 200),
+            UploadedFile::fake()->image('dos.jpg', 200, 200),
+        ],
+    ]))->assertCreated()->json('data');
+
+    // Un array vacío no viaja en multipart: llegaría como campo ausente, que
+    // significa "no borres nada". Por eso hace falta la bandera.
+    enviarServicio($this, servicioValido(['galeria_vaciar' => 1]), $creado['id'])
+        ->assertOk()
+        ->assertJsonPath('data.galeria', []);
+});
+
+test('imagen_principal_eliminar deja el servicio sin foto principal', function () {
+    $creado = enviarServicio($this, servicioValido([
+        'imagen_principal' => UploadedFile::fake()->image('principal.jpg', 300, 300),
+        'galeria' => [UploadedFile::fake()->image('uno.jpg', 200, 200)],
+    ]))->assertCreated()->json('data');
+
+    expect($creado['imagen_principal'])->not->toBeNull();
+
+    enviarServicio($this, servicioValido(['imagen_principal_eliminar' => 1]), $creado['id'])
+        ->assertOk()
+        ->assertJsonPath('data.imagen_principal', null)
+        // Y la galería no se toca: son banderas independientes.
+        ->assertJsonCount(1, 'data.galeria');
+});

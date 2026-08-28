@@ -31,7 +31,14 @@ class CategoriaServicioService
             $anterior = $categoria->imagen;
             $datos['imagen'] = $this->imagenes->guardar($imagen, 'categorias');
             $this->imagenes->borrar($anterior);
+        } elseif (filter_var($datos['imagen_eliminar'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            // Campo explicito porque la AUSENCIA de `imagen` ya significa
+            // "dejala como esta".
+            $this->imagenes->borrar($categoria->imagen);
+            $datos['imagen'] = null;
         }
+
+        unset($datos['imagen_eliminar']);
 
         $categoria->update($datos);
 

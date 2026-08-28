@@ -291,3 +291,28 @@ test('la imagen se sirve por una URL con el tenant, y la de otro negocio da 404'
     // Y no se puede salir de la carpeta del negocio.
     $this->get('/api/archivos/'.$this->tenant->id.'/../../.env')->assertNotFound();
 });
+
+test('imagen_eliminar deja la categoría sin imagen', function () {
+    Storage::fake('public');
+
+    $creada = $this->withToken($this->token)->post('/api/categorias-servicios', [
+        'nombre' => 'Cortes',
+        'imagen' => UploadedFile::fake()->image('cortes.jpg', 300, 200),
+    ], ['Accept' => 'application/json'])->assertCreated()->json('data');
+
+    $ruta = 'categorias/'.basename($creada['imagen_url']);
+    Storage::disk('public')->assertExists($ruta);
+
+    // Hace falta un campo propio porque la AUSENCIA de `imagen` ya significa
+    // "déjala como está" — si no, cada edición borraría la foto.
+    $this->withToken($this->token)->post('/api/categorias-servicios/'.$creada['id'], [
+        '_method' => 'PUT',
+        'nombre' => 'Cortes',
+        'imagen_eliminar' => 1,
+    ], ['Accept' => 'application/json'])
+        ->assertOk()
+        ->assertJsonPath('data.imagen_url', null);
+
+    // Y el archivo se va del disco, no solo la referencia.
+    Storage::disk('public')->assertMissing($ruta);
+});

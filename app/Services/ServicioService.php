@@ -136,6 +136,13 @@ class ServicioService
                 'ruta' => $this->imagenes->guardar($principal, self::CARPETA),
                 'orden' => self::ORDEN_PRINCIPAL,
             ]);
+        } elseif (filter_var($datos['imagen_principal_eliminar'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            // Bandera propia: no mandar el archivo ya significa "dejala".
+            $servicio->imagenes()->where('orden', self::ORDEN_PRINCIPAL)->get()
+                ->each(function (ServicioImagen $img) {
+                    $this->imagenes->borrar($img->ruta);
+                    $img->delete();
+                });
         }
 
         /*
@@ -144,8 +151,10 @@ class ServicioService
          * significar "bórralo todo" — es el mismo error que reenviar la
          * imagen en multipart, pero destruyendo más.
          */
-        if (array_key_exists('galeria_conservar', $datos)) {
-            $conservar = $datos['galeria_conservar'] ?? [];
+        $vaciar = filter_var($datos['galeria_vaciar'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        if ($vaciar || array_key_exists('galeria_conservar', $datos)) {
+            $conservar = $vaciar ? [] : ($datos['galeria_conservar'] ?? []);
 
             $servicio->imagenes()
                 ->where('orden', '>', self::ORDEN_PRINCIPAL)
