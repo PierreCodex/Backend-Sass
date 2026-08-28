@@ -11,9 +11,7 @@ use Illuminate\Http\Request;
 
 class OnboardingController extends Controller
 {
-    public function __construct(private readonly OnboardingService $onboarding)
-    {
-    }
+    public function __construct(private readonly OnboardingService $onboarding) {}
 
     public function show(Request $request): JsonResponse
     {

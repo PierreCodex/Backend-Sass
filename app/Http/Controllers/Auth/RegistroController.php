@@ -11,6 +11,7 @@ use App\Mail\VerificarCorreoMail;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
@@ -22,7 +23,7 @@ class RegistroController extends Controller
      * plan de prueba del seeder) + users dueño. NO abre sesión ni devuelve
      * token, y NO crea ninguna BD de tenant (regla 2: lazy provisioning).
      */
-    public function __invoke(RegisterRequest $request): \Illuminate\Http\JsonResponse
+    public function __invoke(RegisterRequest $request): JsonResponse
     {
         $datos = $request->validated();
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
+use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
@@ -55,6 +56,18 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
      */
     Route::middleware('suscripcion.activa')->group(function () {
         Route::put('/user', [PerfilController::class, 'actualizar']);
+
+        /*
+         * Recursos que viven en la BD del negocio. `tenancy.init` va aqui y
+         * no en el grupo de arriba: /user, /logout y el onboarding se
+         * resuelven enteros en la central, y conectar a la BD del tenant
+         * para nada tiene un coste — ademas de fallar con 503 mientras el
+         * provisioning no ha terminado.
+         */
+        Route::middleware('tenancy.init')->group(function () {
+            Route::apiResource('categorias-servicios', CategoriaServicioController::class)
+                ->parameters(['categorias-servicios' => 'categoria']);
+        });
 
         Route::get('/onboarding', [OnboardingController::class, 'show']);
         Route::post('/onboarding/nombre', [OnboardingController::class, 'nombre']);

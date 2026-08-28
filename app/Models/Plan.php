@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Stancl\Tenancy\Database\Concerns\CentralConnection;
 
 /**
  * `max_profesionales` y `max_sucursales` usan 999 como centinela de
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Plan extends Model
 {
+    use CentralConnection;
+
     protected $table = 'planes';
 
     protected $fillable = [

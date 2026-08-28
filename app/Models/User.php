@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Stancl\Tenancy\Database\Concerns\CentralConnection;
 
 /**
  * Identidad central de quien hace login (dueño/admin/profesional de UN tenant).
@@ -20,7 +21,7 @@ use Laravel\Sanctum\HasApiTokens;
  */
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+    use CentralConnection, HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     public const ROLES = ['dueno', 'admin', 'profesional'];
 

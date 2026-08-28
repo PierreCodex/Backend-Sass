@@ -21,3 +21,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Carpetas de storage por tenant (FilesystemTenancyBootstrapper).
+# Las crea el provisioning y tambien cada test que provisiona.
+/storage/tenant*
