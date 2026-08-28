@@ -266,3 +266,28 @@ test('las categorías de otro negocio NO se ven ni se tocan: 404, nunca 403', fu
 test('sin sesión → 401', function () {
     $this->getJson('/api/categorias-servicios')->assertStatus(401);
 });
+
+test('la imagen se sirve por una URL con el tenant, y la de otro negocio da 404', function () {
+    Storage::fake('public');
+
+    $url = $this->withToken($this->token)->post('/api/categorias-servicios', [
+        'nombre' => 'Cortes',
+        'imagen' => UploadedFile::fake()->image('cortes.jpg', 300, 200),
+    ], ['Accept' => 'application/json'])->assertCreated()->json('data.imagen_url');
+
+    // La URL lleva el id del negocio: sin él, todos los tenants compartirían
+    // el espacio /storage y solo una carpeta física podría estar detrás.
+    expect($url)->toContain('/api/archivos/'.$this->tenant->id.'/categorias/');
+
+    // Se sirve sin sesión: la tienda pública la enseña a visitantes sin cuenta.
+    $this->get($url)->assertOk()->assertHeader('content-type', 'image/webp');
+
+    // Y el mismo archivo pedido bajo OTRO negocio no existe.
+    $otro = crearTenantRegistrado(Plan::where('slug', 'prueba')->firstOrFail());
+    (new ProvisionTenantDatabase($otro))->handle();
+
+    $this->get(str_replace($this->tenant->id, $otro->id, $url))->assertNotFound();
+
+    // Y no se puede salir de la carpeta del negocio.
+    $this->get('/api/archivos/'.$this->tenant->id.'/../../.env')->assertNotFound();
+});

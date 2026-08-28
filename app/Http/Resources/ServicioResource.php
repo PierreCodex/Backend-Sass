@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Services\ImagenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Storage;
 
 class ServicioResource extends JsonResource
 {
@@ -59,6 +59,6 @@ class ServicioResource extends JsonResource
 
     private static function url(?string $ruta): ?string
     {
-        return $ruta === null ? null : Storage::disk('public')->url($ruta);
+        return ImagenService::url($ruta);
     }
 }

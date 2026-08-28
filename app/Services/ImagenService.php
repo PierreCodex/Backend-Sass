@@ -59,6 +59,22 @@ class ImagenService
         return $ruta;
     }
 
+    /**
+     * La URL publica de un archivo del tenant.
+     *
+     * NO se usa `Storage::disk('public')->url()`: eso genera
+     * `/storage/{ruta}` sin segmento de tenant, y todos los negocios
+     * compartirian el mismo espacio de URLs sobre una sola carpeta fisica.
+     */
+    public static function url(?string $ruta): ?string
+    {
+        if ($ruta === null) {
+            return null;
+        }
+
+        return route('archivos.tenant', ['tenant' => tenant('id'), 'ruta' => $ruta]);
+    }
+
     public function borrar(?string $ruta): void
     {
         if ($ruta !== null) {

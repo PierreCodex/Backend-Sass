@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\ArchivoTenantController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegistroController;
@@ -22,6 +23,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:20,1')->group(function () {
     Route::get('/publico/categorias-negocio', CategoriasNegocioController::class);
+
+    // Imagenes del catalogo. Sin sesion: la tienda publica las muestra a
+    // visitantes sin cuenta. El tenant va en la ruta porque cada negocio
+    // tiene su carpeta y un enlace simbolico solo apuntaria a una.
+    Route::get('/archivos/{tenant}/{ruta}', ArchivoTenantController::class)
+        ->where('ruta', '.*')
+        ->name('archivos.tenant');
 
     Route::post('/register', RegistroController::class);
     Route::post('/email/verificar', [VerificacionCorreoController::class, 'verificar']);
