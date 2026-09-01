@@ -3,7 +3,7 @@
 Fecha de análisis: 2026-08-14.
 Estado: **CONGELADO** (2026-08-14) — todas las decisiones abiertas quedaron
 cerradas; el siguiente paso son las migraciones.
-Fuentes: `F:\PERSONAL_JEAN\mi-saas\docs\api-contract.md` (contrato, solo lectura),
+Fuentes: `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\api-contract.md` (contrato, solo lectura),
 `docs/01_bd_central.sql`, `docs/02_bd_tenant.sql`.
 
 **Jerarquía aplicada (CLAUDE.md):**
@@ -16,7 +16,7 @@ Convención de los veredictos: *«gana contrato»* = el SQL o el Resource deben
 producir esa forma; *«gana SQL»* = el backend impone la regla y el contrato la
 absorbe (normalmente sin romper la forma); *«ambos»* = hay que tocar el SQL
 **y** pedir un cambio en el repo del frontend (el contrato no se edita desde
-aquí — se anota como pendiente para `mi-saas`).
+aquí — se anota como pendiente para `Sass-ChiraFlow`).
 
 ---
 
@@ -138,7 +138,7 @@ concretos:
 | `horario: DiaHorario[]` + `excepciones: []` como arrays separados | un solo JSON `{dias, excepciones}` | compatible: el Resource separa. Sin cambio |
 | `rol` incluye `superadmin` | `users.rol` no lo tiene (vive en `platform_admins`) | gana SQL: un usuario de tenant jamás será superadmin. El union del cliente simplemente nunca recibirá ese valor; opcionalmente pedir limpiarlo del tipo |
 | ¿dueño/admin aparecen en `/empleados`? | `profesionales` exige fila con `tipo_pago`, etc. | **DECIDIDO**: todo miembro del staff tiene fila en `profesionales` (el UNIQUE `central_user_id` lo permite). Se **añade columna `atiende TINYINT(1) NOT NULL DEFAULT 1`**: controla si el profesional aparece en la agenda del panel y en la tienda pública (dueño/admin de oficina → `atiende=0`). El cupo del plan sigue contándose por `rol='profesional'`, independiente de `atiende` |
-| `usuario` (login con el que inicia sesión) | `users.usuario` **se elimina** (§2.9) | con email único global la columna no aporta y complica el registro. Mientras el tipo `Empleado` del contrato conserve el campo, el Resource emite el **email** en `usuario` (es el identificador real de login); pedir a `mi-saas` retirarlo o renombrarlo. La búsqueda «por usuario» del index pasa a buscar por email |
+| `usuario` (login con el que inicia sesión) | `users.usuario` **se elimina** (§2.9) | con email único global la columna no aporta y complica el registro. Mientras el tipo `Empleado` del contrato conserve el campo, el Resource emite el **email** en `usuario` (es el identificador real de login); pedir a `Sass-ChiraFlow` retirarlo o renombrarlo. La búsqueda «por usuario» del index pasa a buscar por email |
 
 ### 1.10 `productos` (tenant)
 
@@ -229,7 +229,7 @@ Veredicto: regla de negocio → gana **SQL** (`cita_servicio` se queda). La form
 
 - **SQL: sin cambios.** El panel que crea con `servicio_id` único inserta una
   sola fila en `cita_servicio` (precio y duración congelados).
-- **Contrato (pendiente en `mi-saas`)**: evolucionar `Cita.servicio` a
+- **Contrato (pendiente en `Sass-ChiraFlow`)**: evolucionar `Cita.servicio` a
   `servicios: []` (o añadir `servicios[]` manteniendo `servicio` = primer
   servicio como puente durante la transición). Mientras no se cambie, el
   Resource emite como `servicio` el primero de `cita_servicio` y el panel verá
@@ -405,7 +405,7 @@ lifecycle/consumo de `tenants` (`estado`, `purga_*`, `whatsapp_mensajes_*`,
   prioridad alta**: el método de pago **sí entra** en la pantalla de Caja.
   Deja de ser "campo sin pantalla": el payload de `POST /caja/movimientos`
   incorporará `metodo` y la maqueta de Caja debe añadir el selector (cambio
-  pendiente en `mi-saas`). Además conecta con el módulo de Pagos QR (§6): el
+  pendiente en `Sass-ChiraFlow`). Además conecta con el módulo de Pagos QR (§6): el
   pago verificado genera movimientos con `metodo = yape|plin`.
 - `citas.codigo`, `fuente`, `cancelada_motivo`, `local_id` y los timestamps de
   transición — el panel no los pinta (el código sí sale en la reserva pública).
@@ -433,7 +433,7 @@ lifecycle/consumo de `tenants` (`estado`, `purga_*`, `whatsapp_mensajes_*`,
 9. `tenants`: soporte para `elegible_promo` (§1.6)
 10. `productos.stock_minimo`: default 5 (§1.10)
 
-**Cambios a pedir en el repo del frontend (`mi-saas`) — el contrato no se toca
+**Cambios a pedir en el repo del frontend (`Sass-ChiraFlow`) — el contrato no se toca
 desde aquí:**
 
 - `Cita.servicio` → `servicios[]` (o campo adicional) — §2.4, el más urgente
