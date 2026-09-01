@@ -45,18 +45,40 @@ class ArchivoTenantController extends Controller
             abort(404);
         }
 
-        return $tenant->run(function () use ($ruta): StreamedResponse {
+        /*
+         * El `abort(404)` va FUERA del `run()`, y no es cosmética:
+         * `TenantRun::run` no tiene `try/finally` —llama a `tenancy()->end()`
+         * solo si el callback vuelve por las buenas—, así que una excepción
+         * lanzada dentro deja la petición terminando con el tenant todavía
+         * inicializado. Bajo FPM se muere el proceso y no se nota; bajo Octane
+         * ese estado se filtra a la petición siguiente.
+         *
+         * Devolver null y abortar aquí es más simple que envolverlo en un
+         * try/finally, y deja el `run()` con una sola salida.
+         */
+        $respuesta = $tenant->run(function () use ($ruta): ?StreamedResponse {
             $disco = Storage::disk('public');
 
             if (! $disco->exists($ruta)) {
-                abort(404);
+                return null;
             }
 
+            /*
+             * El disco ya está resuelto contra la carpeta de ESTE negocio, así
+             * que el stream sigue leyendo del sitio correcto aunque se envíe
+             * después de cerrar el contexto del tenant.
+             */
             return $disco->response($ruta, headers: [
                 // Son inmutables: el nombre es un UUID y editar la imagen
                 // crea otro archivo, nunca reescribe este.
                 'Cache-Control' => 'public, max-age=31536000, immutable',
             ]);
         });
+
+        if ($respuesta === null) {
+            abort(404);
+        }
+
+        return $respuesta;
     }
 }

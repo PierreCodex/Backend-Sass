@@ -307,3 +307,95 @@ test('los clientes de otro negocio: 404, nunca 403', function () {
 test('sin sesión → 401', function () {
     $this->getJson('/api/clientes')->assertStatus(401);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Revisión del Sprint 1
+|--------------------------------------------------------------------------
+*/
+
+test('editar sin mandar el teléfono NO borra el normalizado', function () {
+    $id = $this->withToken($this->token)->postJson('/api/clientes', [
+        'nombre' => 'Angélica',
+        'telefono' => '904 169 872',
+    ])->assertCreated()->json('data.id');
+
+    // `validated()` no trae las claves que el formulario no envió, y el
+    // teléfono es opcional: con un `?? null` esto lo dejaba en NULL.
+    $this->withToken($this->token)->putJson('/api/clientes/'.$id, [
+        'nombre' => 'Angélica Gabino',
+    ])->assertOk();
+
+    $this->tenant->run(function () use ($id) {
+        $fila = DB::table('clientes')->find($id);
+
+        expect($fila->telefono)->toBe('904 169 872')
+            // Lo importante: sin esto el cliente se volvía invisible para el
+            // firstOrCreate de la reserva pública y el UNIQUE dejaba de
+            // protegerlo — se le fabricaba una segunda ficha al llamar.
+            ->and($fila->telefono_normalizado)->toBe('904169872');
+    });
+
+    $this->withToken($this->token)->getJson('/api/clientes?search=904169872')
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+});
+
+test('editar con el teléfono de una ficha BORRADA da 422, no un 500', function () {
+    $borrado = $this->withToken($this->token)->postJson('/api/clientes', [
+        'nombre' => 'La que se fue',
+        'telefono' => '904 169 872',
+    ])->assertCreated()->json('data.id');
+
+    $this->withToken($this->token)->deleteJson('/api/clientes/'.$borrado)->assertNoContent();
+
+    $otro = $this->withToken($this->token)->postJson('/api/clientes', [
+        'nombre' => 'Otro',
+        'telefono' => '999 111 222',
+    ])->assertCreated()->json('data.id');
+
+    /*
+     * El UNIQUE de MySQL no distingue el soft delete. Como la validación sí lo
+     * hacía, esto pasaba el 422 y reventaba contra el índice con un 500.
+     */
+    $this->withToken($this->token)->putJson('/api/clientes/'.$otro, [
+        'nombre' => 'Otro',
+        'telefono' => '904169872',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['telefono'])
+        ->assertJsonPath('errors.telefono.0', 'Ese teléfono es de un cliente eliminado. Para recuperarlo, créalo de nuevo con ese número.');
+});
+
+test('un teléfono que llega como array es 422, no un TypeError', function () {
+    // Sin `bail`, la regla propia corría igual con `string` ya fallado y
+    // recibía un array donde declara ?string: TypeError, o sea 500.
+    $this->withToken($this->token)->postJson('/api/clientes', [
+        'nombre' => 'Angélica',
+        'telefono' => ['904169872'],
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['telefono']);
+});
+
+test('per_page se acota: un negativo no vuelca la tabla entera', function () {
+    foreach (['Uno', 'Dos', 'Tres'] as $i => $nombre) {
+        $this->withToken($this->token)->postJson('/api/clientes', [
+            'nombre' => $nombre,
+            'telefono' => '90000000'.$i,
+        ])->assertCreated();
+    }
+
+    /*
+     * `Builder::limit()` ignora los negativos EN SILENCIO: la consulta salía
+     * sin LIMIT y un negocio con 50.000 fichas las serializaba todas.
+     */
+    $this->withToken($this->token)->getJson('/api/clientes?per_page=-1')
+        ->assertOk()
+        ->assertJsonPath('meta.per_page', 1)
+        ->assertJsonCount(1, 'data');
+
+    $this->withToken($this->token)->getJson('/api/clientes?per_page=5000')
+        ->assertOk()
+        ->assertJsonPath('meta.per_page', 100);
+});

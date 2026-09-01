@@ -29,7 +29,7 @@ class ServicioController extends Controller
             ->when($request->string('search')->trim()->value(), fn ($q, string $search) => $q->where('nombre', 'like', "%{$search}%"))
             ->when($request->filled('categoria_id'), fn ($q) => $q->where('categoria_servicio_id', $request->integer('categoria_id')))
             ->orderBy('nombre')
-            ->paginate($request->integer('per_page', 10));
+            ->paginate($this->porPagina($request));
 
         return ServicioResource::collection($servicios);
     }

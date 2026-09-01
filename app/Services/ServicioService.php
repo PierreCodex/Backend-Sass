@@ -8,6 +8,7 @@ use App\Models\Servicio;
 use App\Models\ServicioImagen;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ServicioService
 {
@@ -15,6 +16,9 @@ class ServicioService
 
     /** orden 0 = principal; 1..4 = galería. */
     private const ORDEN_PRINCIPAL = 0;
+
+    /** Tope TOTAL de la galería, no por petición. */
+    private const MAX_GALERIA = 4;
 
     public function __construct(private ImagenService $imagenes) {}
 
@@ -37,6 +41,27 @@ class ServicioService
 
             if ($borrado !== null) {
                 $borrado->restore();
+
+                /*
+                 * Restaurar la fila es un truco para no chocar con el UNIQUE,
+                 * pero para el dueño esto es un ALTA: rellenó un formulario en
+                 * blanco. Devolverle la fila tal cual hacía que el servicio
+                 * "nuevo" naciera con las fotos del viejo, con sus
+                 * profesionales y desactivado si así lo había dejado.
+                 *
+                 * Se limpia lo que el formulario de alta no puede expresar: no
+                 * manda `galeria_conservar` ni `empleado_ids` vacíos ni los
+                 * flags, así que la ausencia no puede significar "conserva lo
+                 * de antes".
+                 */
+                $this->vaciarImagenes($borrado);
+
+                $datos += [
+                    'activo' => true,
+                    'visible_publico' => true,
+                    'empleado_ids' => [],
+                ];
+
                 $servicio = $this->rellenar($borrado, $datos);
             } else {
                 $servicio = $this->rellenar(new Servicio, $datos);
@@ -68,8 +93,9 @@ class ServicioService
      * catálogo, y bloquearlo lo dejaría con una lista que no puede limpiar.
      * El historial queda intacto porque la fila no desaparece.
      *
-     * Las imágenes tampoco se borran del disco: si mañana restaura el
-     * servicio, vuelve entero.
+     * Las imágenes se quedan en disco mientras el servicio siga borrado. Si el
+     * dueño vuelve a darlo de alta con el mismo nombre, `crear()` restaura la
+     * fila pero limpia esas imágenes: para él es un alta, no una restauración.
      */
     public function eliminar(Servicio $servicio): void
     {
@@ -120,6 +146,42 @@ class ServicioService
      */
     private function guardarImagenes(Servicio $servicio, array $archivos, array $datos): void
     {
+        /*
+         * Galería. `galeria_conservar` llega SOLO al editar: si no viene, no
+         * se borra nada. Que el formulario no mande el campo no puede
+         * significar "bórralo todo" — es el mismo error que reenviar la
+         * imagen en multipart, pero destruyendo más.
+         */
+        $vaciar = filter_var($datos['galeria_vaciar'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $podar = $vaciar || array_key_exists('galeria_conservar', $datos);
+        $conservar = $vaciar ? [] : ($datos['galeria_conservar'] ?? []);
+
+        $nuevas = $archivos['galeria'] ?? [];
+
+        /*
+         * El tope de la galería es TOTAL, no por petición. El `max:4` del Form
+         * Request solo cuenta los archivos que vienen en ESTA llamada: un
+         * servicio con 4 fotos que reenviaba sus 4 ids en `galeria_conservar` y
+         * subía 4 más acababa con 8, contra lo que promete el propio mensaje de
+         * error. Se comprueba lo que va a QUEDAR: las que sobreviven a la poda
+         * más las nuevas.
+         *
+         * Va antes de tocar disco para que un 422 no deje archivos sueltos: la
+         * transacción revierte la base, pero no los ficheros ya escritos.
+         */
+        if ($nuevas !== []) {
+            $sobreviven = $servicio->imagenes()
+                ->where('orden', '>', self::ORDEN_PRINCIPAL)
+                ->when($podar, fn ($q) => $q->whereIn('id', $conservar))
+                ->count();
+
+            if ($sobreviven + count($nuevas) > self::MAX_GALERIA) {
+                throw ValidationException::withMessages([
+                    'galeria' => 'La galería admite hasta '.self::MAX_GALERIA.' imágenes.',
+                ]);
+            }
+        }
+
         $principal = $archivos['imagen_principal'] ?? null;
 
         if ($principal !== null) {
@@ -145,17 +207,7 @@ class ServicioService
                 });
         }
 
-        /*
-         * Galería. `galeria_conservar` llega SOLO al editar: si no viene, no
-         * se borra nada. Que el formulario no mande el campo no puede
-         * significar "bórralo todo" — es el mismo error que reenviar la
-         * imagen en multipart, pero destruyendo más.
-         */
-        $vaciar = filter_var($datos['galeria_vaciar'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-        if ($vaciar || array_key_exists('galeria_conservar', $datos)) {
-            $conservar = $vaciar ? [] : ($datos['galeria_conservar'] ?? []);
-
+        if ($podar) {
             $servicio->imagenes()
                 ->where('orden', '>', self::ORDEN_PRINCIPAL)
                 ->whereNotIn('id', $conservar)
@@ -166,7 +218,7 @@ class ServicioService
                 });
         }
 
-        foreach ($archivos['galeria'] ?? [] as $archivo) {
+        foreach ($nuevas as $archivo) {
             $siguiente = (int) $servicio->imagenes()->max('orden') + 1;
 
             ServicioImagen::create([
@@ -175,6 +227,14 @@ class ServicioService
                 'orden' => $siguiente,
             ]);
         }
+    }
+
+    private function vaciarImagenes(Servicio $servicio): void
+    {
+        $servicio->imagenes()->get()->each(function (ServicioImagen $img) {
+            $this->imagenes->borrar($img->ruta);
+            $img->delete();
+        });
     }
 
     private function cargar(Servicio $servicio): Servicio

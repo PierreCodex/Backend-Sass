@@ -1,7 +1,7 @@
-# Pendientes de contrato (backend → mi-saas)
+# Pendientes de contrato (backend → Sass-ChiraFlow)
 
 Lo que este backend necesita del contrato y **no puede editar desde aquí**
-(`api-contract.md` y `vistas/` solo se tocan desde el repo `mi-saas`, en el
+(`api-contract.md` y `vistas/` solo se tocan desde el repo `Sass-ChiraFlow`, en el
 ritual de cierre de cada sprint — plan-sprints §4).
 
 Formato de entrada:
@@ -423,6 +423,47 @@ borrados; el de un servicio vivo sigue dando 422.
 
 - **Ref**: `vistas/clientes.md`, `vistas/onboarding.md`.
 - **Estado**: pendiente (backlog, sin sprint asignado).
+
+---
+
+## [Sprint 1] Revisión de cierre: lo que cambia de cara al cliente
+
+Repaso del Sprint 1 buscando fallos (2026-09-01). Se corrigieron 13; **cuatro
+cambian lo que la API responde** y conviene fijarlos en el contrato.
+
+1. **`color` exige hexadecimal de 6 dígitos.** Categorías y servicios validaban
+   `max:20` contra una columna `char(7)`, con la BD en modo estricto: mandar
+   `#5D87FF80` (hex con alfa) o `rebeccapurple` devolvía **500**. Ahora es
+   `regex:/^#[0-9a-fA-F]{6}$/` → `422 errors.color`, «El color debe ser un
+   hexadecimal como #4F46E5». El `input[type=color]` del formulario ya manda
+   justo eso, así que no hay nada que tocar salvo pintar el 422 si algún día se
+   escribe a mano.
+
+2. **`per_page` tiene techo: 100.** No estaba acotado y `Builder::limit()`
+   ignora los negativos en silencio, así que `?per_page=-1` salía **sin LIMIT**
+   y volcaba la tabla entera. Ahora se recorta a `[1, 100]`; `meta.per_page`
+   dice siempre lo que se aplicó de verdad.
+
+3. **Mensaje nuevo al editar un cliente con el teléfono de una ficha
+   eliminada**: `422 errors.telefono`, «Ese teléfono es de un cliente
+   eliminado. Para recuperarlo, créalo de nuevo con ese número.» Antes era un
+   500 contra el índice UNIQUE. El de siempre («Ya existe un cliente con ese
+   teléfono.») se mantiene para las fichas vivas. Mismo caso en servicios:
+   renombrar uno con el nombre de otro borrado da 422, no 500.
+
+4. **El tope de la galería es TOTAL, no por petición.** El `max:4` solo contaba
+   los archivos de la llamada: reenviar los 4 ids en `galeria_conservar` y
+   subir 4 más dejaba 8 fotos. Ahora se valida lo que va a QUEDAR y responde
+   `422 errors.galeria` con el mismo texto de siempre.
+
+**Nota de comportamiento, sin cambio de forma**: recrear un servicio borrado
+con el mismo nombre sigue restaurando la fila, pero ahora **nace limpio** —
+sin la galería del anterior, activo y visible. Para el dueño eso es un alta,
+no una restauración: rellenó un formulario en blanco.
+
+- **Ref**: `ServicioRequest`, `CategoriaServicioRequest`, `ClienteRequest`,
+  `Controller::porPagina`, `ServicioService`.
+- **Estado**: pendiente.
 
 ---
 

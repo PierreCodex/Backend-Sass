@@ -43,6 +43,13 @@ class ClienteRequest extends FormRequest
              * historial en dos.
              */
             'telefono' => [
+                /*
+                 * `bail` antes que nada: sin él, el closure de abajo corre
+                 * aunque `string` ya haya fallado, y un `telefono[]=x` le
+                 * llega como array. Con el tipo declarado eso es un TypeError
+                 * —o sea un 500— en vez del 422 que el validador tenía listo.
+                 */
+                'bail',
                 'nullable', 'string', 'max:30',
                 /*
                  * Regla propia y no `Rule::unique`: la columna que hay que
@@ -52,20 +59,43 @@ class ClienteRequest extends FormRequest
                  * guardado. Así el error sigue cayendo en el campo `telefono`,
                  * que es donde el formulario lo pinta.
                  */
-                function (string $attributo, ?string $valor, callable $fallar) use ($id): void {
+                function (string $attributo, mixed $valor, callable $fallar) use ($id): void {
+                    // Cinturón además del `bail`: la regla sigue siendo segura
+                    // si alguien reordena las de arriba.
+                    if (! is_string($valor) && $valor !== null) {
+                        return;
+                    }
+
                     $normalizado = Cliente::normalizarTelefono($valor);
 
                     if ($normalizado === null) {
                         return;
                     }
 
-                    $existe = Cliente::where('telefono_normalizado', $normalizado)
-                        ->when($id !== null, fn ($q) => $q->whereKeyNot($id))
-                        ->exists();
+                    $consulta = Cliente::where('telefono_normalizado', $normalizado);
 
-                    if ($existe) {
-                        $fallar('Ya existe un cliente con ese teléfono.');
+                    if ($id !== null) {
+                        /*
+                         * Al EDITAR hay que mirar también las fichas borradas:
+                         * el UNIQUE de MySQL no distingue el soft delete, así
+                         * que sin esto la validación pasa y el UPDATE revienta
+                         * contra el índice con un 500.
+                         *
+                         * Al CREAR, no: ahí chocar con una ficha borrada es
+                         * legítimo y el service la restaura con su historial.
+                         */
+                        $consulta->withTrashed()->whereKeyNot($id);
                     }
+
+                    $otro = $consulta->first();
+
+                    if ($otro === null) {
+                        return;
+                    }
+
+                    $fallar($otro->trashed()
+                        ? 'Ese teléfono es de un cliente eliminado. Para recuperarlo, créalo de nuevo con ese número.'
+                        : 'Ya existe un cliente con ese teléfono.');
                 },
             ],
 
