@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
 use App\Http\Controllers\ClienteController;
+use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
@@ -91,6 +92,15 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
 
             Route::apiResource('servicios', ServicioController::class);
             Route::apiResource('clientes', ClienteController::class);
+
+            /*
+             * ANTES del apiResource: si no, `empleados/{empleado}` se traga
+             * `empleados/resumen` y el binding intenta buscar un profesional
+             * llamado "resumen".
+             */
+            Route::get('empleados/resumen', [EmpleadoController::class, 'resumen']);
+            Route::apiResource('empleados', EmpleadoController::class)
+                ->parameters(['empleados' => 'empleado']);
         });
 
         Route::get('/onboarding', [OnboardingController::class, 'show']);
