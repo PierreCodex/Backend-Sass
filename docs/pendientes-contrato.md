@@ -199,6 +199,76 @@ Formato de entrada:
 
 ---
 
+## [Sprint 2] Empleados: divergencias al implementar
+
+El backend del 2.A está hecho (24 tests). Seis cosas que conviene fijar en
+`vistas/empleados.md` y en el contrato.
+
+1. **El campo `usuario` desaparece de la ENTRADA.** `users.usuario` se eliminó
+   (§2.9) y la credencial es el **email**, único global. El payload pide
+   `email`; `usuario` no se acepta. De SALIDA se sigue emitiendo `usuario` con
+   el email dentro, mientras el tipo `Empleado` del contrato conserve la clave
+   (§1.9). **El formulario tiene los dos campos y debe quedarse solo con el
+   correo**; el buscador «por usuario» ya busca por email.
+
+2. **`rol` es `admin`, no `administrador`.** Lo dice el contrato y es lo que
+   acepta el ENUM de `users.rol`. `web/src/features/empleados/constants.ts`
+   usa `administrador` y hay que cambiarlo, o toda alta de admin dará 422.
+
+3. **La contraseña exige 8 caracteres, no 6.** La ficha dice 6; el registro y
+   el reset ya piden 8, y rebajar el suelo de una credencial real para cuadrar
+   con el formulario sería decidirlo al revés. **Subid la validación del
+   formulario a 8**, o el usuario verá un 422 tras pasar vuestra validación.
+
+4. **El adaptador de horario YA NO HACE FALTA.** La ficha preveía traducir
+   entre el array de 7 días del frontend y el `{dias:{lunes:…}, inicio, fin}`
+   del Laravel viejo. El backend nuevo **guarda directamente la forma del
+   contrato** (`dia`, `desde`, `hasta`, `disponible`), así que se manda y se
+   recibe lo mismo. Se puede borrar la traducción de
+   `features/empleados/services/empleados.api.ts`.
+
+5. **`horario` vuelve SIEMPRE con los 7 días**, rellenando los ausentes con
+   `activo: false` y `breaks: []`. La fila del dueño nace con el horario en
+   NULL (la crea el provisioning) y el formulario necesita 7 tarjetas que
+   pintar.
+
+6. **`telefono` exige `+51` + 9 dígitos**, como el registro y Mi perfil —
+   escriben la MISMA columna y el WhatsApp cuenta con ese formato. La ficha
+   muestra `987 441 220`: el formulario tiene que normalizar antes de enviar.
+
+**Respuestas a los pendientes de la ficha:**
+
+- *¿Se valida que los breaks caigan dentro de la jornada?* **Sí**, 422.
+- *¿Se pueden solapar dos breaks del mismo día?* **No**, 422. Tocarse en el
+  extremo (13:00-14:00 y 14:00-15:00) sí vale. De este JSON sale la
+  disponibilidad del Sprint 4: un break imposible produce huecos imposibles.
+- *¿Qué pasa al eliminar un empleado con citas?* **204 y soft delete** en las
+  dos bases, más revocación de sus tokens. Las citas lo referencian y borrarlo
+  de verdad reescribiría el historial.
+- *¿Existe «Sueldo fijo»?* Sí: `tipo_pago` es `comision|sueldo|ambos`, y los
+  períodos son `semanal|quincenal|mensual`. Al cambiar a un tipo sin sueldo,
+  `monto_sueldo` y `periodo_pago` **se limpian**.
+- *¿El empleado se asigna a un local?* No en v1 — se decide en el Sprint 3.
+
+**Añadido que el contrato no tiene**: el Resource emite **`atiende`** (bool).
+Decide si la persona sale en la agenda y en la tienda pública; NO decide el
+cupo del plan (§1.9). El payload ya lo acepta, para que el interruptor se
+pueda añadir sin tocar backend.
+
+**Barandillas nuevas, todas 422**: al dueño no se le cambia el rol ni se le da
+de baja; nadie se asciende a `dueno`; nadie se borra a sí mismo; y el cupo se
+comprueba también al **reactivar** (si solo mirase el alta, bastaría dar de
+baja a uno, crear a otro y reactivar al primero para saltarse el plan).
+
+**El listado adjunta `resumen`** (`{profesionales_activos, limite_profesionales}`)
+junto a `data` y `meta`, como ofrecía la ficha. `GET /empleados/resumen` se
+mantiene: el formulario lo consulta sin recargar la tabla.
+
+- **Ref**: `vistas/empleados.md`, discrepancias §1.9, §2.3, §1.5.
+- **Estado**: pendiente.
+
+---
+
 ## [Sprint 1] Categorías de servicios: divergencias al implementar
 
 - **Qué**: implementado el CRUD de `/categorias-servicios` tal como lo define
