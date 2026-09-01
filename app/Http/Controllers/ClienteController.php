@@ -40,7 +40,7 @@ class ClienteController extends Controller
                 });
             })
             ->orderBy('nombre')
-            ->paginate($request->integer('per_page', 10));
+            ->paginate($this->porPagina($request));
 
         return ClienteResource::collection($clientes);
     }

@@ -21,15 +21,26 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('throttle:20,1')->group(function () {
-    Route::get('/publico/categorias-negocio', CategoriasNegocioController::class);
-
-    // Imagenes del catalogo. Sin sesion: la tienda publica las muestra a
-    // visitantes sin cuenta. El tenant va en la ruta porque cada negocio
-    // tiene su carpeta y un enlace simbolico solo apuntaria a una.
+/*
+ * Imagenes del catalogo. Sin sesion: la tienda publica las muestra a
+ * visitantes sin cuenta. El tenant va en la ruta porque cada negocio
+ * tiene su carpeta y un enlace simbolico solo apuntaria a una.
+ *
+ * Limitador PROPIO y con NOMBRE (definido en AppServiceProvider), fuera del
+ * grupo de abajo. Un `throttle:300,1` numerico no habria bastado: sin nombre,
+ * la clave es `dominio|ip` y todas las rutas comparten el mismo contador —
+ * solo cambia el techo. Una pagina de la tienda con 12 fotos gastaba 12 golpes
+ * del cupo de /login y dejaba al visitante sin poder entrar durante el resto
+ * del minuto.
+ */
+Route::middleware('throttle:archivos')->group(function () {
     Route::get('/archivos/{tenant}/{ruta}', ArchivoTenantController::class)
         ->where('ruta', '.*')
         ->name('archivos.tenant');
+});
+
+Route::middleware('throttle:20,1')->group(function () {
+    Route::get('/publico/categorias-negocio', CategoriasNegocioController::class);
 
     Route::post('/register', RegistroController::class);
     Route::post('/email/verificar', [VerificacionCorreoController::class, 'verificar']);

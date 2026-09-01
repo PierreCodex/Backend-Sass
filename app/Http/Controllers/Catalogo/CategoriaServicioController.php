@@ -32,7 +32,7 @@ class CategoriaServicioController extends Controller
             // no baile entre peticiones cuando varias comparten orden.
             ->orderBy('orden')
             ->orderBy('nombre')
-            ->paginate($request->integer('per_page', 10));
+            ->paginate($this->porPagina($request));
 
         return CategoriaServicioResource::collection($categorias);
     }

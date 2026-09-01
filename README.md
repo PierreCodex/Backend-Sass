@@ -6,8 +6,8 @@ Yape/Plin.
 
 - **Stack**: Laravel 12 (API pura) · stancl/tenancy v3 multi-base
   (una BD por tenant) · Sanctum por tokens Bearer · MySQL 8 · Pest.
-- **Frontend**: repo separado (`mi-saas`, Next.js). Consume esta API a través
-  de un BFF propio; el contrato vive en `mi-saas/docs/api-contract.md`.
+- **Frontend**: repo separado (`Sass-ChiraFlow`, Next.js). Consume esta API a través
+  de un BFF propio; el contrato vive en `Sass-ChiraFlow/docs/api-contract.md`.
 - **Documentos clave**: `CLAUDE.md` (arquitectura y reglas),
   `docs/discrepancias.md` (decisiones congeladas — prevalecen sobre los SQL
   de referencia), `docs/pendientes-contrato.md` (lo que el backend le pide

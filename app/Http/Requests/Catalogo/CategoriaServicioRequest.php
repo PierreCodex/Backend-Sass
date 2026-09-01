@@ -29,7 +29,13 @@ class CategoriaServicioRequest extends FormRequest
                 Rule::unique('categoria_servicios', 'nombre')->ignore($id),
             ],
             'descripcion' => ['nullable', 'string', 'max:255'],
-            'color' => ['nullable', 'string', 'max:20'],
+            /*
+             * La columna es `char(7)` y la BD corre en modo estricto: un
+             * `max:20` dejaba pasar `#5D87FF80` (hex con alfa) o
+             * `rebeccapurple` y MySQL respondia "Data too long" — un 500
+             * donde tocaba un 422.
+             */
+            'color' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'orden' => ['nullable', 'integer', 'min:0'],
             'imagen' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:2048'],
 
@@ -46,6 +52,7 @@ class CategoriaServicioRequest extends FormRequest
     {
         return [
             'nombre.unique' => 'Ya existe una categoría con ese nombre.',
+            'color.regex' => 'El color debe ser un hexadecimal como #4F46E5.',
             'imagen.max' => 'La imagen no debe superar los 2 MB.',
             'imagen.image' => 'El archivo debe ser una imagen.',
         ];

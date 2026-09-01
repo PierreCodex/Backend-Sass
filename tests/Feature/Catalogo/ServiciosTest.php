@@ -368,3 +368,84 @@ test('imagen_principal_eliminar deja el servicio sin foto principal', function (
         // Y la galería no se toca: son banderas independientes.
         ->assertJsonCount(1, 'data.galeria');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Revisión del Sprint 1
+|--------------------------------------------------------------------------
+*/
+
+test('la galería cuenta el TOTAL, no solo las de esta petición', function () {
+    $creado = enviarServicio($this, servicioValido([
+        'galeria' => array_map(
+            fn (int $i) => UploadedFile::fake()->image("g{$i}.jpg", 200, 200),
+            range(1, 4),
+        ),
+    ]))->assertCreated()->json('data');
+
+    /*
+     * El formulario reenvía sus 4 ids y sube una más. El `max:4` del Form
+     * Request solo mira los archivos de ESTA llamada, así que dejaba pasar la
+     * quinta y el servicio acababa con más fotos de las que promete el
+     * mensaje de error.
+     */
+    enviarServicio($this, servicioValido([
+        'galeria_conservar' => array_column($creado['galeria'], 'id'),
+        'galeria' => [UploadedFile::fake()->image('g5.jpg', 200, 200)],
+    ]), $creado['id'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['galeria']);
+
+    // Y el 422 no puede haber podado nada por el camino.
+    $this->withToken($this->token)->getJson('/api/servicios/'.$creado['id'])
+        ->assertOk()
+        ->assertJsonCount(4, 'data.galeria');
+});
+
+test('recrear un servicio borrado no arrastra las fotos ni el estado del viejo', function () {
+    $creado = enviarServicio($this, servicioValido([
+        'activo' => 0,
+        'galeria' => [UploadedFile::fake()->image('vieja.jpg', 200, 200)],
+    ]))->assertCreated()->json('data');
+
+    $this->withToken($this->token)->deleteJson('/api/servicios/'.$creado['id'])->assertNoContent();
+
+    /*
+     * Restaurar la fila es un truco para no chocar con el UNIQUE, pero para el
+     * dueño esto es un ALTA: rellenó un formulario en blanco. Devolvérsela tal
+     * cual hacía nacer el servicio "nuevo" con la galería del viejo y apagado.
+     */
+    $nuevo = enviarServicio($this, servicioValido())->assertCreated()->json('data');
+
+    expect($nuevo['id'])->toBe($creado['id'])
+        ->and($nuevo['galeria'])->toBeEmpty()
+        ->and($nuevo['activo'])->toBeTrue();
+});
+
+test('renombrar un servicio con el nombre de otro BORRADO da 422, no un 500', function () {
+    $viejo = enviarServicio($this, servicioValido(['nombre' => 'Corte clásico']))
+        ->assertCreated()->json('data.id');
+
+    $this->withToken($this->token)->deleteJson('/api/servicios/'.$viejo)->assertNoContent();
+
+    $otro = enviarServicio($this, servicioValido(['nombre' => 'Barba']))
+        ->assertCreated()->json('data.id');
+
+    // El índice UNIQUE no distingue el soft delete: ignorar los borrados aquí
+    // hacía pasar la validación y reventar el UPDATE.
+    enviarServicio($this, servicioValido(['nombre' => 'Corte clásico']), $otro)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['nombre']);
+});
+
+test('un color que no es hexadecimal de 6 dígitos → 422, no un 500', function () {
+    // La columna es char(7) y la BD va en modo estricto: con `max:20` esto
+    // llegaba a MySQL y volvía como "Data too long".
+    enviarServicio($this, servicioValido(['color' => '#5D87FF80']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['color']);
+
+    enviarServicio($this, servicioValido(['color' => 'rebeccapurple']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['color']);
+});

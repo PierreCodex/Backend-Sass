@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
+use Throwable;
 
 /**
  * Migra SOLO los tenants que ya tienen base de datos.
@@ -51,7 +52,23 @@ class MigrarTenantsProvisionados extends Command
         $fallos = [];
 
         foreach ($tenants as $id) {
-            $codigo = Artisan::call('tenants:migrate', ['--tenants' => [$id]], $this->output);
+            /*
+             * El try/catch es lo que de verdad aisla al tenant que falla.
+             * `Illuminate\Console\Application` hace `setCatchExceptions(false)`
+             * en su constructor, asi que `Artisan::call` NO devuelve un codigo
+             * de error cuando el comando revienta: deja subir la excepcion. Sin
+             * esto, mirar `$codigo` solo atrapa al comando que decide devolver
+             * FAILURE por su cuenta, y una migracion que choque con los datos
+             * de un negocio se lleva por delante la tanda entera — que es
+             * exactamente lo que este comando existe para impedir.
+             */
+            try {
+                $codigo = Artisan::call('tenants:migrate', ['--tenants' => [$id]], $this->output);
+            } catch (Throwable $e) {
+                $codigo = self::FAILURE;
+
+                $this->error("  {$id}: {$e->getMessage()}");
+            }
 
             if ($codigo !== self::SUCCESS) {
                 $fallos[] = $id;

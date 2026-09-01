@@ -39,10 +39,23 @@ class ServicioRequest extends FormRequest
         return [
             'nombre' => [
                 'required', 'string', 'max:150',
-                Rule::unique('servicios', 'nombre')->ignore($id)->whereNull('deleted_at'),
+                $id === null
+                    /*
+                     * Al CREAR los borrados no estorban: chocar con uno es
+                     * legitimo y el service lo restaura.
+                     */
+                    ? Rule::unique('servicios', 'nombre')->whereNull('deleted_at')
+                    /*
+                     * Al EDITAR si cuentan. El indice UNIQUE de MySQL no
+                     * distingue el soft delete, asi que ignorarlos aqui hacia
+                     * pasar la validacion y reventar el UPDATE con un 500.
+                     */
+                    : Rule::unique('servicios', 'nombre')->ignore($id),
             ],
             'descripcion' => ['nullable', 'string', 'max:1000'],
-            'color' => ['required', 'string', 'max:20'],
+            // `char(7)` + modo estricto: ver el mismo comentario en
+            // CategoriaServicioRequest. Con `max:20` un hex con alfa daba 500.
+            'color' => ['required', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'categoria_id' => ['nullable', 'integer', Rule::exists('categoria_servicios', 'id')],
             'tipo' => ['required', Rule::in(Servicio::TIPOS)],
 
@@ -90,6 +103,7 @@ class ServicioRequest extends FormRequest
     {
         return [
             'nombre.unique' => 'Ya existe un servicio con ese nombre.',
+            'color.regex' => 'El color debe ser un hexadecimal como #4F46E5.',
             'max_sesiones.required' => 'Indica cuántas sesiones incluye.',
             'galeria.max' => 'La galería admite hasta 4 imágenes.',
             'empleado_ids.*.exists' => 'Alguno de los profesionales seleccionados ya no existe.',

@@ -316,3 +316,68 @@ test('imagen_eliminar deja la categoría sin imagen', function () {
     // Y el archivo se va del disco, no solo la referencia.
     Storage::disk('public')->assertMissing($ruta);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Revisión del Sprint 1
+|--------------------------------------------------------------------------
+*/
+
+test('un color que no es hexadecimal de 6 dígitos → 422, no un 500', function () {
+    // `char(7)` + modo estricto: con `max:20` un hex con alfa llegaba a MySQL
+    // y volvía como "Data too long".
+    $this->withToken($this->token)->postJson('/api/categorias-servicios', [
+        'nombre' => 'Cortes',
+        'color' => '#5D87FF80',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['color']);
+
+    // El color sigue siendo opcional y el válido pasa.
+    $this->withToken($this->token)->postJson('/api/categorias-servicios', [
+        'nombre' => 'Cortes',
+        'color' => '#5D87FF',
+    ])->assertCreated();
+});
+
+test('un 404 de la ruta de archivos no deja el tenant inicializado', function () {
+    Storage::fake('public');
+
+    // El estado de tenancy no lo cierra nadie al acabar la petición, así que
+    // se parte de limpio para que la aserción signifique algo.
+    tenancy()->end();
+
+    $this->get('/api/archivos/'.$this->tenant->id.'/categorias/no-existe.webp')
+        ->assertNotFound();
+
+    /*
+     * `TenantRun::run` no tiene try/finally: llama a `tenancy()->end()` solo si
+     * el callback vuelve por las buenas. Con el `abort(404)` dentro, la
+     * petición terminaba con la conexión y el disco del negocio todavía
+     * montados — inocuo bajo FPM, filtrado a la petición siguiente bajo Octane.
+     */
+    expect(tenant())->toBeNull();
+});
+
+test('las imágenes no comparten el cupo de peticiones con el login', function () {
+    Storage::fake('public');
+
+    $url = $this->withToken($this->token)->post('/api/categorias-servicios', [
+        'nombre' => 'Cortes',
+        'imagen' => UploadedFile::fake()->image('cortes.jpg', 300, 200),
+    ], ['Accept' => 'application/json'])->assertCreated()->json('data.imagen_url');
+
+    /*
+     * El identificador de `throttle` es `dominio|ip` — sin la ruta —, así que
+     * todo lo que comparta `throttle:20,1` comparte UN cubo. Con las imágenes
+     * dentro, una página de la tienda con doce fotos se comía el cupo y dejaba
+     * al visitante sin poder entrar al panel durante el resto del minuto.
+     */
+    foreach (range(1, 25) as $ignorado) {
+        $this->get($url)->assertOk();
+    }
+
+    // Y lo que de verdad importa: el login sigue en pie.
+    $this->postJson('/api/login', ['email' => 'nadie@ejemplo.test', 'password' => 'loquesea'])
+        ->assertStatus(422);
+});

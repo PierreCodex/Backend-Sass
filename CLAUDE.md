@@ -6,20 +6,20 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 
 ## Repos y documentos
 
-- Frontend en repo separado: `F:\PERSONAL_JEAN\mi-saas` (Next.js 16 + React 19
+- Frontend en repo separado: `D:\PERSONAL_JEAN\Sass-ChiraFlow` (Next.js 16 + React 19
   + MUI 7 + TanStack Query). Consume esta API a través de un BFF propio.
 - **`docs/discrepancias.md` está CONGELADO**: sus divergencias y decisiones
   cerradas **prevalecen sobre los SQL de referencia** cuando difieran.
   Ninguna sesión puede reabrirlas por seguir los SQL al pie de la letra.
-- El contrato de la API vive en `F:\PERSONAL_JEAN\mi-saas\docs\api-contract.md`
+- El contrato de la API vive en `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\api-contract.md`
   — **LEERLO SIEMPRE antes de diseñar endpoints.** Es el original único:
   nunca copiarlo a este repo ni editarlo desde aquí.
-- La especificación por pantalla está en `F:\PERSONAL_JEAN\mi-saas\docs\vistas\`.
-- Plan de sprints: `F:\PERSONAL_JEAN\mi-saas\docs\plan-sprints.md` — leerlo al
+- La especificación por pantalla está en `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\vistas\`.
+- Plan de sprints: `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\plan-sprints.md` — leerlo al
   arrancar cada sesión para saber qué módulo toca. Solo lectura.
 - Lo que este repo necesite del contrato se anota en
   `docs/pendientes-contrato.md`; nunca se edita api-contract.md desde aquí.
-- **Tablero de las dos sesiones**: `F:\PERSONAL_JEAN\mi-saas\docs\estado.md`
+- **Tablero de las dos sesiones**: `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\estado.md`
   — **LEERLO AL ARRANCAR CADA SESIÓN**, antes que el plan de sprints: dice
   qué está hecho y qué tiene en la mano la otra sesión ahora mismo. Reglas:
   - Desde aquí se edita **solo** la columna BACKEND, la sección «Sesión
@@ -29,8 +29,8 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   - Lo que este lado necesite del frontend va en **Traspasos** con fecha;
     es el único sitio donde se le pide algo a la otra sesión.
 - **`git` solo en este repo.** La sesión de frontend hace `git` solo en
-  `mi-saas`. Nunca crear ramas ni commitear en el repo ajeno: el 2026-08-22
-  las dos sesiones escribieron sobre `backend-sass` y no se perdió trabajo
+  `Sass-ChiraFlow`. Nunca crear ramas ni commitear en el repo ajeno: el 2026-08-22
+  las dos sesiones escribieron sobre `Backend-Sass` y no se perdió trabajo
   de milagro.
 - **Una rama por módulo**: `sprint-N/modulo` (p. ej. `sprint-1/categorias`),
   salida de `main`. No se mergea hasta que los tests del módulo estén en

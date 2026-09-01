@@ -39,9 +39,22 @@ class ClienteService
         });
     }
 
+    /**
+     * El normalizado se recalcula SOLO si el teléfono viene en la petición.
+     *
+     * `validated()` no trae las claves que el formulario no mandó, y `telefono`
+     * es opcional. Con un `?? null` bastaba un PUT sin ese campo para dejar
+     * `telefono` con su valor y `telefono_normalizado` en NULL: el cliente se
+     * volvía invisible para el `firstOrCreate` de la reserva pública y el
+     * UNIQUE dejaba de protegerlo, que es justo lo que la columna existe para
+     * impedir. `update()` ya deja quietas las columnas ausentes; el normalizado
+     * tiene que comportarse igual.
+     */
     public function actualizar(Cliente $cliente, array $datos): Cliente
     {
-        $datos['telefono_normalizado'] = Cliente::normalizarTelefono($datos['telefono'] ?? null);
+        if (array_key_exists('telefono', $datos)) {
+            $datos['telefono_normalizado'] = Cliente::normalizarTelefono($datos['telefono']);
+        }
 
         $cliente->update($datos);
 
