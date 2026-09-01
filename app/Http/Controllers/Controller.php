@@ -9,8 +9,17 @@ abstract class Controller
     /** Tamaño de página por defecto de todos los index. */
     protected const POR_PAGINA = 10;
 
-    /** Techo duro: nadie pide más de esto, venga lo que venga en la query. */
-    protected const POR_PAGINA_MAX = 100;
+    /**
+     * Techo duro: nadie pide más de esto, venga lo que venga en la query.
+     *
+     * 200 y no 100 porque el helper `all()` del frontend —el que llena los
+     * selects— pide justo `per_page: 200`. Lo que había que matar era el caso
+     * SIN límite, no la diferencia entre 100 y 200: un techo bajo no protege
+     * de nada extra y trunca esos selects en silencio, que es peor que un
+     * error. Ojo: `all()` sigue siendo frágil por encima de 200 — eso se
+     * arregla con un autocompletado paginado, no subiendo el número.
+     */
+    protected const POR_PAGINA_MAX = 200;
 
     /**
      * `per_page` acotado.

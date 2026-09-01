@@ -397,5 +397,5 @@ test('per_page se acota: un negativo no vuelca la tabla entera', function () {
 
     $this->withToken($this->token)->getJson('/api/clientes?per_page=5000')
         ->assertOk()
-        ->assertJsonPath('meta.per_page', 100);
+        ->assertJsonPath('meta.per_page', 200);
 });

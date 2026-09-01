@@ -439,10 +439,17 @@ cambian lo que la API responde** y conviene fijarlos en el contrato.
    justo eso, así que no hay nada que tocar salvo pintar el 422 si algún día se
    escribe a mano.
 
-2. **`per_page` tiene techo: 100.** No estaba acotado y `Builder::limit()`
+2. **`per_page` tiene techo: 200.** No estaba acotado y `Builder::limit()`
    ignora los negativos en silencio, así que `?per_page=-1` salía **sin LIMIT**
-   y volcaba la tabla entera. Ahora se recorta a `[1, 100]`; `meta.per_page`
+   y volcaba la tabla entera. Ahora se recorta a `[1, 200]`; `meta.per_page`
    dice siempre lo que se aplicó de verdad.
+
+   El techo es 200 y no 100 porque el helper `all()` del frontend
+   (`web/src/lib/api/recurso.ts`), el que llena los selects, pide justo
+   `per_page: 200`. **Pero `all()` es frágil de raíz**: un negocio con más
+   opciones de las que quepan en una página pierde las restantes SIN error, y
+   eso ya pasaba antes de este techo. La solución no es subir el número, es un
+   autocompletado paginado o un endpoint ligero de solo `id`+`nombre`.
 
 3. **Mensaje nuevo al editar un cliente con el teléfono de una ficha
    eliminada**: `422 errors.telefono`, «Ese teléfono es de un cliente
