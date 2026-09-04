@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\RolesSistema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -12,9 +13,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * dato suyo. Los tres de sistema (`dueno`, `admin`, `profesional`) se siembran
  * al provisionar desde `App\Support\RolesSistema`.
  *
- * Los endpoints de gestión de roles llegan más adelante en este mismo sprint;
- * aquí se usa para resolver `clave` → `rol_id` al dar de alta un empleado, y
- * para contar el cupo del plan sin salir de la base del negocio.
+ * Se usa para resolver `clave` → `rol_id` al dar de alta un empleado, para
+ * contar el cupo del plan sin salir de la base del negocio, y desde
+ * `/api/roles` para que el dueño arme los suyos.
  */
 class Rol extends Model
 {
@@ -38,5 +39,54 @@ class Rol extends Model
     public static function clavesDeSistema(): array
     {
         return ['dueno', 'admin', 'profesional'];
+    }
+
+    /**
+     * La matriz con los 14 módulos, `null` donde no hay acceso.
+     *
+     * El JSON guardado solo trae las claves con permiso (el preset de
+     * Profesional tiene cinco de catorce). Rellenar los huecos aquí, y no en
+     * el cliente, es lo que evita que la lista de módulos exista en dos sitios.
+     *
+     * @return array<string, string|null>
+     */
+    public function permisosCompletos(): array
+    {
+        $vacia = array_fill_keys(RolesSistema::MODULOS, null);
+
+        // Solo los módulos conocidos: si un rol quedó con una clave de un
+        // módulo retirado, se ignora en vez de filtrarse al API.
+        return array_merge($vacia, array_intersect_key($this->permisos ?? [], $vacia));
+    }
+
+    /**
+     * El rol del dueño no se toca por ninguna vía.
+     *
+     * Quitarle un permiso lo dejaría fuera de su propia facturación, y
+     * dárselo a otro fabricaría un segundo superusuario. Cambiar de dueño es
+     * una operación de soporte, no una casilla del formulario.
+     */
+    public function esDueno(): bool
+    {
+        return $this->clave === 'dueno';
+    }
+
+    public function editable(): bool
+    {
+        return ! $this->esDueno();
+    }
+
+    /**
+     * Los tres de sistema no se borran ni renombrándolos: son el suelo sobre
+     * el que se apoyan el provisioning y el cupo del plan.
+     */
+    public function borrable(): bool
+    {
+        return ! $this->sistema;
+    }
+
+    public function duplicable(): bool
+    {
+        return ! $this->esDueno();
     }
 }

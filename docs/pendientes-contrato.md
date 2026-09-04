@@ -192,10 +192,126 @@ Formato de entrada:
   lo descartó explícitamente («el empleado no se asigna a una sede en este
   formulario»). Resolver en el Sprint 3, con Locales.
 
-- **Ref**: `vistas/empleados.md` § `rol` — valores (deja abierto «¿qué
-  permisos tiene cada uno?»), `app/Support/RolesSistema.php` (matriz de
+- **Ref**: `vistas/empleados.md` § `rol` — valores (deja abierto «qué
+  permisos tiene cada uno»), `app/Support/RolesSistema.php` (matriz de
   presets), migración `tenant/2026_08_27_000001_create_roles_table.php`.
-- **Estado**: pendiente.
+- **Estado**: **endpoints hechos** (2026-09-04, 20 tests). Falta la pantalla y
+  falta que Empleados los use — ver el apartado siguiente.
+
+### Los endpoints, tal como responden
+
+`GET · POST · PUT · DELETE /api/roles` — recurso completo, dentro de
+`tenancy.init` (los roles viven en la BD del negocio).
+
+```json
+{
+  "data": [
+    {
+      "id": 2,
+      "nombre": "Administrador",
+      "clave": "admin",
+      "sistema": true,
+      "permisos": { "dashboard": "ver", "citas": "gestionar", "…": null },
+      "solo_propios": false,
+      "editable": true,
+      "borrable": false,
+      "duplicable": true,
+      "empleados_count": 3
+    }
+  ],
+  "meta": { "…": "paginación de siempre" },
+  "modulos": ["dashboard", "citas", "calendario", "…"]
+}
+```
+
+Cinco cosas que conviene saber antes de maquetar:
+
+1. **`permisos` trae SIEMPRE los 14 módulos**, con `null` donde no hay acceso,
+   aunque el JSON guardado tenga cinco claves. Mismo criterio que el horario
+   de empleados: si llegara con huecos, el formulario necesitaría su propia
+   lista de módulos para rellenarlos y habría dos listas divergiendo. Al
+   guardar da igual mandar los nulls: el backend los descarta.
+2. **`modulos` viaja junto al listado**, fuera de `data`. Es la lista completa
+   y ordenada para las filas de la matriz; no hay endpoint aparte porque son
+   una consulta y una constante para pintar una sola tabla.
+3. **`editable`, `borrable` y `duplicable` vienen resueltos.** No los deduzcas
+   del `sistema` ni de la `clave`: si el formulario reimplementa la matriz,
+   acaba divergiendo de la de aquí, que es la que manda. Sirven para
+   deshabilitar botones; el 422 salta igual si se intenta.
+4. **`clave` es de solo lectura y sobrevive al renombrado.** El negocio puede
+   llamar «Encargada» a Administrador; la clave es lo que deja al backend
+   seguir reconociéndolo. `clave` y `sistema` enviados en el payload se
+   **ignoran** — no son 422, simplemente no existen para la validación.
+5. **Solo el dueño**, en las cinco acciones → `403`. Si lo pudiera un
+   administrador, se crearía un rol con todo marcado y se lo asignaría:
+   escalada en dos clics. Dar de alta gente y decidir qué puede hacer la gente
+   son permisos distintos, aunque el preset de Administrador traiga
+   `empleados: gestionar`.
+
+**Payload de escritura**: `nombre` (requerido, único), `permisos` (objeto
+módulo → `ver` | `gestionar` | `null`) y `solo_propios` (bool). Nada más.
+
+**Los 422 con nombre propio**:
+
+| Situación | Campo | Texto |
+|---|---|---|
+| Nombre repetido | `nombre` | Ya tienes un rol con ese nombre. |
+| Módulo inexistente | `permisos` | Estos módulos no existen: … |
+| Nivel inventado | `permisos.{modulo}` | El nivel de acceso solo puede ser «ver» o «gestionar». |
+| Editar el rol de Dueño | `rol` | El rol del dueño no se puede editar. |
+| Borrar uno de sistema | `rol` | Los roles del sistema no se pueden borrar… |
+| Borrar uno en uso | `rol` | Este rol lo usan N persona(s)… |
+
+**Duplicar no es un endpoint**: es leer un rol y hacer `POST` con sus permisos
+y otro nombre. El de Dueño no se duplica (`duplicable: false`).
+
+---
+
+## [Sprint 2] Configuración se parte en cuatro secciones de Administración
+
+- **Qué**: `/configuracion` deja de ser un formulario único con cuatro
+  pestañas verticales. Cada pestaña pasa a ser una sección propia de la vista
+  de Administración, con su URL:
+
+  | Pestaña de hoy | URL nueva |
+  |---|---|
+  | Negocio | `/administracion/general/negocio` |
+  | Agenda | `/administracion/general/agenda` |
+  | Marca | `/administracion/general/marca` |
+  | Sitio público | `/administracion/general/sitio-publico` |
+
+  Decidido en la sesión de frontend el 2026-09-04. `nav.ts` declaraba dos
+  secciones (`negocio` y `horario`) y la pantalla tenía cuatro pestañas: no
+  coincidían y había que resolverlo al mudarla. Se resuelve a favor de las
+  cuatro porque el shell de Administración ya lleva índice a la izquierda —
+  el mismo trabajo que hacían las pestañas verticales, así que anidarlas
+  duplicaba la navegación.
+
+  `/configuracion/perfil` (Mi perfil) **no se muda**: es personal, no
+  administración del negocio.
+
+- **Consecuencia para el backend (módulo 2.B)**: `PUT /configuracion` recibirá
+  **payloads parciales**, uno por sección, en vez del objeto completo que
+  describe `vistas/configuracion.md`. El update debe tocar **solo las claves
+  presentes** en la petición: un `fill()` a secas haría que guardar el horario
+  borrara el email y la dirección.
+
+  Es la misma trampa que el `telefono_normalizado` de Clientes (§ Revisión de
+  cierre del Sprint 1). En un PUT parcial, «clave ausente» significa «no lo
+  toques», nunca «ponlo a null».
+
+  Ojo al implementarlo: `sitio_publico_activo` y `mostrar_en_marketplace` en
+  `false` SÍ viajan y SÍ deben escribirse. La distinción es entre clave
+  ausente y clave con valor falso, no entre valor vacío y no vacío.
+
+- **Onboarding**: el paso `horario_local` debe enlazar a
+  `/administracion/general/agenda`. Hoy `DESCRIPCION_PASOS`
+  (`web/src/features/onboarding/types.ts`) lo manda a `/configuracion`.
+
+- **Ref**: `vistas/configuracion.md` § Qué muestra (las cuatro pestañas y el
+  porqué del rediseño del 2026-08-22),
+  `web/src/features/administracion/nav.ts`.
+- **Estado**: pendiente de implementar (módulo 2.B).
 
 ---
 
