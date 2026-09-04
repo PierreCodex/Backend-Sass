@@ -242,11 +242,22 @@ Cinco cosas que conviene saber antes de maquetar:
    llamar «Encargada» a Administrador; la clave es lo que deja al backend
    seguir reconociéndolo. `clave` y `sistema` enviados en el payload se
    **ignoran** — no son 422, simplemente no existen para la validación.
-5. **Solo el dueño**, en las cinco acciones → `403`. Si lo pudiera un
-   administrador, se crearía un rol con todo marcado y se lo asignaría:
-   escalada en dos clics. Dar de alta gente y decidir qué puede hacer la gente
-   son permisos distintos, aunque el preset de Administrador traiga
-   `empleados: gestionar`.
+5. **Leer sí, escribir solo el dueño.** `GET /roles` y `GET /roles/{id}` los
+   puede pedir cualquier usuario del negocio; `POST`, `PUT` y `DELETE`
+   responden **403** a quien no sea el dueño.
+
+   El motivo de la mitad restrictiva: si un administrador pudiera crear roles,
+   se haría uno con todo marcado y se lo asignaría — escalada en dos clics.
+   Dar de alta gente y decidir qué puede hacer la gente son permisos distintos,
+   aunque su preset traiga `empleados: gestionar`.
+
+   Y el de la mitad abierta: el select de rol del formulario de empleados tiene
+   que funcionarle al administrador, que sí puede dar altas. La lista tampoco
+   es un secreto dentro del negocio — es su organigrama. Se deja abierta a
+   cualquier usuario del tenant y no a `dueno|admin` para no inventar una
+   segunda tabla de permisos por rol al lado de la que ya existe; cuando el
+   backend resuelva capacidades de verdad, la lectura pasará a pedir
+   `empleados.ver`.
 
 **Payload de escritura**: `nombre` (requerido, único), `permisos` (objeto
 módulo → `ver` | `gestionar` | `null`) y `solo_propios` (bool). Nada más.
@@ -776,6 +787,109 @@ borrados; el de un servicio vivo sigue dando 422.
   del 2026-08-27.
 - **Estado**: pendiente (anotarlo en el contrato § CRUD estándar, porque
   aplica a todo recurso con `FormData`: empleados y locales tendrán lo mismo).
+
+---
+
+## [Sprint 7] `rango_profesionales` sugiere plan; y falta un escalón para el independiente
+
+### Qué hace hoy el campo del registro
+
+«¿Cuántos profesionales atienden en tu negocio?» (`independiente`, `2`, `3-5`,
+`6-15`, `+16`) se guarda en `tenants.rango_profesionales` y **no decide ningún
+plan**: el registro asigna a todo el mundo el plan `prueba`.
+
+Para la prueba está bien y debe quedarse así. Son 7 días gratis con funciones
+de Premium; condicionar el trial a una respuesta que se da en cinco segundos,
+antes de conocer el producto, sería restringir en el peor momento posible.
+
+El campo tiene dos usos y conviene no mezclarlos:
+
+1. **Esconder el grupo Equipo** a quien trabaja solo — ya desbloqueado, el dato
+   viaja en `usuario.negocio.rango_profesionales`. Es trabajo del panel.
+2. **Sugerir el plan** al terminar la prueba — es esto, y su sitio es la
+   pantalla de Mi Plan (Sprint 7).
+
+### El mapeo, para que no se reinvente
+
+| Respondió | Plan sugerido |
+|---|---|
+| `independiente` | Individual (1) |
+| `2` | Básico (2) |
+| `3-5` | Premium (5) |
+| `6-15` | Pro (15) |
+| `+16` | Pro + plazas extra |
+
+**Dos condiciones, y son las que hacen que esto funcione:**
+
+**Sugerir, nunca filtrar.** No se esconden planes por esa respuesta. Quien dijo
+«3-5» puede haber contratado a dos, o querer empezar barato y subir. Marcar uno
+como recomendado sí; quitar los otros de la vista, no.
+
+**Manda el uso real, no lo declarado.** Cuando el negocio llega a elegir plan ya
+sabemos algo mejor que lo que dijo al registrarse: cuántos profesionales creó.
+`GET /empleados/resumen` da `profesionales_activos`; ese número gana, y el
+rango declarado es solo el respaldo para quien no dio de alta a nadie.
+
+Eso además adelanta un problema en vez de dejarlo para después: si durante la
+prueba creó 4 personas, la pantalla puede marcar Básico como **insuficiente**
+(«no te alcanza para tu equipo actual») ANTES de que elija, en lugar de que lo
+descubra al quedarse por encima del límite.
+
+### Bajar de plan NO desactiva a nadie
+
+Decisión explícita, porque hoy pasa por omisión y conviene que pase por
+decisión: el cupo se comprueba al crear, al reactivar y al encender `atiende`,
+así que un negocio que baja de plan **se queda por encima del límite** — su
+gente sigue trabajando y simplemente no puede añadir a nadie más hasta volver
+por debajo.
+
+Es lo correcto. Desactivar automáticamente le quitaría gente de la agenda y
+cancelaría su disponibilidad por un evento de facturación, sin que nadie lo
+pida: una acción destructiva y silenciosa. Bloquear es reversible y visible.
+
+Lo que falta no es lógica, es **decirlo en pantalla**: con
+`profesionales_activos` y `limite_profesionales` que ya devuelve el resumen, el
+panel puede pintar «5 de 2 — estás por encima de tu plan» con un botón de
+ampliar.
+
+### Falta un plan para el independiente
+
+Hoy el más barato es Básico, **S/99 por 2 profesionales**. Le preguntamos al
+barbero si trabaja solo y luego el plan de entrada es para dos. Y desde que el
+cupo cuenta agendas, el dueño ocupa su plaza: un independiente consume 1 y paga
+por 2.
+
+Propuesta (**el precio lo decide el dueño del producto**):
+
+| Campo | Valor propuesto |
+|---|---|
+| `slug` / `nombre` | `individual` / Individual |
+| `precio_mensual` | **S/49** |
+| `precio_anual` | 490 (misma proporción que los demás: 10 meses por 12) |
+| `precio_promo` / `promo_duracion_meses` | 9 / 3, como Básico y Premium |
+| `max_profesionales` | 1 |
+| `max_sucursales` | 1 |
+| `max_whatsapp_mes` | 0 (igual que Básico) |
+| `precio_profesional_extra` | **0 — no admite plazas extra** |
+| `destacado` | false |
+| `features` | las de Básico |
+
+El 49 es la mitad de Básico, número redondo, y deja sitio a la escalera
+49 → 99 → 149 → 449.
+
+**Lo importante no es el precio, es la última fila.** Si Individual admitiera
+plazas sueltas a S/11 como los demás, `49 + 11 = 60` daría dos profesionales
+por menos que los 99 de Básico, con las mismas funciones: nadie compraría
+Básico nunca. El escalón de entrada tiene que estar **capado en duro** — crecer
+significa subir de plan, y ese es justamente el momento en que el negocio
+entiende para qué sirve pagar más.
+
+(Entre los demás no hay fuga: Básico + 3 plazas son S/132 contra los S/149 de
+Premium, pero Premium no vende solo plazas — trae sucursales ilimitadas, 100
+WhatsApp al mes y sus features. Ahí el complemento hace lo que debe.)
+
+- **Estado**: pendiente. El mapeo y el escalón se implementan en el Sprint 7;
+  el seeder del plan se puede sembrar antes, cuando el precio esté decidido.
 
 ---
 
