@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
 use App\Http\Controllers\ClienteController;
+use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
@@ -88,6 +89,19 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
          * provisioning no ha terminado.
          */
         Route::middleware('tenancy.init')->group(function () {
+            /*
+             * Los datos del negocio viven en la BD CENTRAL, no en la del
+             * tenant. Aun asi va dentro de `tenancy.init`: el logo y la
+             * portada se guardan en el disco del negocio, y
+             * `Storage::disk('public')` solo apunta a su carpeta con tenancy
+             * inicializada.
+             *
+             * Sin `{id}`: el negocio sale del token. No hay ruta que apunte a
+             * otro.
+             */
+            Route::get('configuracion', [ConfiguracionController::class, 'show']);
+            Route::put('configuracion', [ConfiguracionController::class, 'update']);
+
             Route::apiResource('categorias-servicios', CategoriaServicioController::class)
                 ->parameters(['categorias-servicios' => 'categoria']);
 
