@@ -82,17 +82,34 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   `users.rol`.
 - **Auth solo email + contraseña.** Nada de OAuth por ahora (el esquema no lo
   bloquea: añadir `google_id` nullable después es trivial).
-- **Todo el staff tiene fila en `profesionales`**, con flag `atiende` (bool,
-  default 1) que controla si aparece en agenda y en la tienda pública. El
-  dueño la recibe desde el **job de provisioning**, no en la transacción de
-  registro: esa fila vive en la BD del tenant, que aún no existe al registrar.
-  **El cupo del plan cuenta a quien está activo Y atiende** (revisado el
-  2026-09-04; antes contaba a todo el staff). El eje es la agenda, no el rol
-  ni el login: un usuario del panel no cuesta nada, una persona reservable sí.
-  Así una recepcionista no ocupa plaza y un barbero sí, aunque el negocio les
-  invente los roles — y no hay que vigilarlo, porque apagar `atiende` para no
-  pagar quita justo aquello por lo que se pagaba. El dueño no es excepción: si
-  atiende, ocupa su plaza, y un independiente consume 1.
+- **Usuarios y profesionales son cosas DISTINTAS** (separado el 2026-09-04;
+  antes todo el staff tenía fila en `profesionales`). Son dos tablas del
+  tenant y ninguna implica la otra:
+  - **`usuarios`**: quien ENTRA al panel. `central_user_id` (sin FK, la
+    credencial vive en `users` de la central) + `rol_id` con foreign key real
+    contra `roles`. Una recepcionista es esto y nada más.
+  - **`profesionales`**: quien PRESTA los servicios. `usuario_id` **nullable**
+    con `nullOnDelete` es la unión opcional: un barbero puede no tener cuenta,
+    y quitarle el acceso a quien la tiene no se lleva su ficha ni sus citas.
+
+  El modelo anterior obligaba a declarar `tipo_pago` para dar de alta a una
+  recepcionista, que entraba con un 50% de comisión sobre servicios que no
+  presta. Cuando el modelo obliga a rellenar campos sin sentido, el modelo
+  está mal.
+
+  El dueño recibe su fila de `usuarios` en el **job de provisioning** (no en
+  la transacción de registro: esa base aún no existe), y la de
+  `profesionales` **solo si se registró como `independiente`** — quien dijo
+  «solo yo» es su propio profesional; a los demás se la pide el checklist de
+  onboarding.
+
+  **El cupo del plan cuenta filas activas de `profesionales`**, sin
+  excepciones ni flags: quien está en esa tabla presta servicios, y punto. Los
+  usuarios del panel son ilimitados; los profesionales, no — el coste escala
+  con citas, no con logins.
+
+  **`atiende` significa UNA sola cosa**: si aparece en la tienda pública. No
+  decide el cupo ni si alguien es staff.
 - **`tenants.id` y `tenants.slug` son cosas DISTINTAS** (cerrado en el
   contrato, Sprint 0):
   - `id`: inmutable, aleatorio, nace en el registro, nombra la BD
@@ -154,9 +171,10 @@ desechable (nunca la de desarrollo), provisionar un tenant, volcar con
 - **`users.email` es UNIQUE GLOBAL** (no compuesto). La columna
   **`users.usuario` se ELIMINA**: con email único global no aporta, y su
   unique compuesto cae con ella
-- `profesionales` y `clientes` son perfiles locales del tenant; referencian
-  `central_user_id` SIN foreign key (MySQL no permite FK entre bases; la
-  integridad la garantiza la aplicación)
+- `usuarios` y `clientes` referencian `central_user_id` SIN foreign key (MySQL
+  no permite FK entre bases; la integridad la garantiza la aplicación).
+  `profesionales` ya NO lo hace: cuelga de `usuarios.id` con una FK de verdad,
+  que es la ventaja de haber metido las cuentas en la base del negocio
 - `citas`: `starts_at`/`ends_at` DATETIME, `cliente_id NOT NULL`,
   CHECK ends_at > starts_at. `cita_servicio` es la ÚNICA fuente de verdad de
   los servicios de una cita (no existe `citas.servicio_id`)

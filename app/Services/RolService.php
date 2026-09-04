@@ -19,14 +19,14 @@ class RolService
             'sistema' => false,
         ]);
 
-        return $rol->loadCount('profesionales');
+        return $rol->loadCount('usuarios');
     }
 
     public function actualizar(Rol $rol, array $datos): Rol
     {
         $rol->update($this->normalizar($datos));
 
-        return $rol->loadCount('profesionales');
+        return $rol->loadCount('usuarios');
     }
 
     public function eliminar(Rol $rol): void
@@ -37,7 +37,7 @@ class RolService
          * 500 con un error de integridad, no como un mensaje que diga a cuanta
          * gente hay que reasignar primero.
          */
-        $enUso = $rol->profesionales()->count();
+        $enUso = $rol->usuarios()->count();
 
         if ($enUso > 0) {
             throw ValidationException::withMessages([

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Requests\Empleados;
+namespace App\Http\Requests\Profesionales;
 
 use App\Models\Profesional;
 use App\Models\User;
@@ -11,24 +11,26 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * El empleado cruza las dos bases (§1.9), y también su validación: `email`,
- * `password` y `rol` son de `users` (central); el resto, de `profesionales`.
+ * Quien presta los servicios. Todo esto vive en la base del negocio.
  *
- * NO existe el campo `usuario` que pide la ficha: `users.usuario` se eliminó
- * (§2.9) y la credencial de login es el email, único GLOBAL. El Resource sigue
- * emitiendo `usuario` con el email dentro mientras el contrato conserve la
- * clave, pero de entrada no se acepta — anotado en pendientes-contrato.
+ * La única parte que cruza a la central es `usuario`, opcional: es la casilla
+ * «darle acceso al panel». Sin ella la persona existe, atiende y cobra su
+ * comisión, pero no entra al sistema — que es el caso de la mayoría de los
+ * barberos de una barbería.
+ *
+ * Sin campo de contraseña, tampoco cuando se da acceso: la elige la propia
+ * persona desde la invitación que le llega por correo.
  */
-class EmpleadoRequest extends FormRequest
+class ProfesionalRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
         /*
          * En multipart todo llega como cadena, y "" no es null para `nullable`.
-         * La contraseña es el caso que importa: la ficha dice que al editar se
-         * manda vacía para "no cambiarla", y sin esto entraría a `min:8`.
+         * Sin esto, un campo que el usuario dejó vacío entraría a validarse
+         * como si trajera contenido.
          */
-        foreach (['password', 'cargo', 'telefono', 'monto_sueldo', 'periodo_pago'] as $campo) {
+        foreach (['cargo', 'telefono', 'monto_sueldo', 'periodo_pago'] as $campo) {
             if ($this->input($campo) === '') {
                 $this->merge([$campo => null]);
             }
@@ -37,37 +39,28 @@ class EmpleadoRequest extends FormRequest
 
     public function rules(): array
     {
-        $empleado = $this->route('empleado');
-        $centralUserId = $empleado?->central_user_id;
-
         return [
+            // El que ven los clientes en la tienda pública.
             'nombre' => ['required', 'string', 'max:150'],
 
             /*
-             * El email es la credencial y es UNIQUE GLOBAL: choca con cualquier
-             * usuario de CUALQUIER negocio, no solo del propio. Es lo que
-             * impide que dos personas distintas compartan login.
+             * La cuenta, opcional. Si viene, `UsuarioService` crea el usuario
+             * central y le manda la invitación; el email es UNIQUE GLOBAL, así
+             * que choca con cualquier usuario de CUALQUIER negocio.
+             *
+             * Solo se acepta si aún no tiene cuenta: cambiarle el correo o el
+             * rol a quien ya la tiene se hace en `/usuarios`, que es su sitio.
+             * Aquí se ignora en silencio (el service lo comprueba).
              */
-            'email' => [
-                'required', 'email', 'max:150',
-                Rule::unique(User::class, 'email')->ignore($centralUserId),
+            'usuario' => ['nullable', 'array'],
+            'usuario.email' => [
+                'required_with:usuario', 'email', 'max:150',
+                Rule::unique(User::class, 'email'),
             ],
-
-            /*
-             * Obligatoria al crear; ausente o null al editar significa "no la
-             * toques" (ficha § Contraseña). `min:8` como el registro y el reset:
-             * la ficha dice 6, pero rebajar el suelo de una credencial real por
-             * cuadrar con el formulario sería al revés de como debe decidirse.
-             */
-            'password' => [$empleado === null ? 'required' : 'nullable', 'string', 'min:8'],
-
-            /*
-             * El rol es ahora uno de la tabla `roles` del negocio, no el ENUM
-             * central: es lo que deja asignar los que crea el dueño. El
-             * `users.rol` central se DERIVA de su clave (ver EmpleadoService)
-             * y deja de ser un dato que el cliente elige.
-             */
-            'rol_id' => ['required', 'integer', Rule::exists('roles', 'id')],
+            'usuario.rol_id' => [
+                'required_with:usuario', 'integer',
+                Rule::exists('roles', 'id'),
+            ],
 
             'cargo' => ['nullable', 'string', 'max:100'],
 

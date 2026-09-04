@@ -51,8 +51,9 @@ class RolResource extends JsonResource
             'duplicable' => $this->duplicable(),
 
             // Para el dialogo de borrado y para explicar por que un rol en uso
-            // no se puede quitar.
-            'empleados_count' => $this->whenCounted('profesionales'),
+            // no se puede quitar. Cuenta CUENTAS, no fichas de profesional: un
+            // barbero sin acceso al panel no lleva rol.
+            'usuarios_count' => $this->whenCounted('usuarios'),
         ];
     }
 }

@@ -12,7 +12,10 @@ beforeEach(function () {
     Mail::fake();
     Queue::fake();
 
-    $this->postJson('/api/register', payloadRegistro());
+    // `independiente`: es el rango con el que el provisioning le crea al
+    // dueno su ficha de profesional, y este archivo prueba que el perfil se
+    // propaga hasta ella.
+    $this->postJson('/api/register', payloadRegistro(['rango_profesionales' => 'independiente']));
     $this->user = User::where('email', 'maria@correo.pe')->firstOrFail();
     $this->user->forceFill(['email_verified_at' => now()])->save();
 
@@ -103,6 +106,7 @@ test('PUT /user propaga nombre, teléfono y foto a profesionales del tenant', fu
         ->assertOk();
 
     $fila = $this->user->tenant->run(fn () => DB::table('profesionales')
+        ->join('usuarios', 'usuarios.id', '=', 'profesionales.usuario_id')
         ->where('central_user_id', $this->user->id)
         ->first());
 

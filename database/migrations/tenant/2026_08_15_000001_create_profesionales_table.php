@@ -4,20 +4,31 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-// Perfil laboral local. La identidad (email, password, rol) vive en la BD
-// central: central_user_id la referencia SIN foreign key (MySQL no permite
-// FK entre bases; la integridad es de la aplicación).
-// Divergencias aplicadas: tipo_pago 'ambos' (no 'mixto', §1.9) y columna
-// `atiende` — TODO el staff tiene fila aquí (dueño/admin incluidos, desde el
-// provisioning); el flag controla agenda y tienda pública, no el cupo.
+// Quien PRESTA los servicios. Independiente de quien entra al panel
+// (`usuarios`): un barbero puede no tener cuenta, y una recepcionista tiene
+// cuenta y no está aquí.
+//
+// `usuario_id` es la unión opcional entre ambos mundos, y es `nullOnDelete` a
+// propósito: quitarle el acceso a alguien no puede llevarse por delante su
+// ficha, sus citas ni sus comisiones.
+//
+// `atiende` significa UNA sola cosa: si aparece en la tienda pública. No decide
+// el cupo del plan (eso es tener fila activa aquí) ni si es staff (eso es tener
+// fila en `usuarios`).
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::create('profesionales', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('central_user_id')->unique(); // → central.users.id (sin FK)
-            $table->string('nombre', 150); // denormalizado p/ mostrar sin ir a central
+
+            // NULL = no entra al sistema. El UNIQUE admite varios NULL en
+            // MySQL, así que un negocio puede tener a todo su equipo sin
+            // cuentas si así lo quiere.
+            $table->foreignId('usuario_id')->nullable()->unique()
+                ->constrained('usuarios')->nullOnDelete();
+
+            $table->string('nombre', 150); // el que ven los clientes en la tienda
             $table->string('cargo', 100)->nullable();
             $table->string('foto')->nullable();
             $table->string('telefono', 30)->nullable();

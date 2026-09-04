@@ -16,13 +16,17 @@ beforeEach(function () {
 
 afterEach(fn () => limpiarBasesDeTenants());
 
-function crearTenantRegistrado($plan): Tenant
+function crearTenantRegistrado($plan, string $rango = 'independiente'): Tenant
 {
     // Lo mismo que hará POST /register: tenant SIN nombre ni slug (los fija
     // el onboarding), estado 'registrada', BD sin provisionar.
+    //
+    // `independiente` por defecto porque es el caso en que el provisioning le
+    // crea al dueño su ficha de profesional, y casi todos los tests la dan por
+    // hecha. Los que prueban lo contrario pasan otro rango.
     return Tenant::create([
         'plan_id' => $plan->id,
-        'rango_profesionales' => '3-5',
+        'rango_profesionales' => $rango,
     ])->refresh(); // carga los defaults que pone MySQL (estado, db_provisionada)
 }
 
@@ -64,7 +68,7 @@ test('el job de provisioning crea la BD, migra todas las tablas y deja al dueño
 
     $tenant->run(function () use ($dueno) {
         foreach ([
-            'roles', 'profesionales', 'clientes', 'locales', 'local_profesional',
+            'roles', 'usuarios', 'profesionales', 'clientes', 'locales', 'local_profesional',
             'categoria_servicios', 'servicios', 'servicio_imagenes',
             'servicio_profesional', 'productos', 'citas', 'cita_servicio',
             'cita_producto', 'cita_pagos', 'grupos', 'grupo_local',
@@ -74,7 +78,10 @@ test('el job de provisioning crea la BD, migra todas las tablas y deja al dueño
             expect(Schema::hasTable($tabla))->toBeTrue("Falta la tabla {$tabla}");
         }
 
-        $perfil = DB::table('profesionales')->where('central_user_id', $dueno->id)->first();
+        $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
+        expect($cuenta)->not->toBeNull();
+
+        $perfil = DB::table('profesionales')->where('usuario_id', $cuenta->id)->first();
 
         expect($perfil)->not->toBeNull()
             ->and($perfil->nombre)->toBe('María Quispe')
@@ -97,7 +104,8 @@ test('re-lanzar el job de provisioning es idempotente', function () {
     (new ProvisionTenantDatabase($tenant))->handle();
 
     $tenant->run(function () use ($dueno) {
-        expect(DB::table('profesionales')->where('central_user_id', $dueno->id)->count())->toBe(1)
+        expect(DB::table('usuarios')->where('central_user_id', $dueno->id)->count())->toBe(1)
+            ->and(DB::table('profesionales')->count())->toBe(1)
             ->and(DB::table('roles')->count())->toBe(3);
     });
 });
@@ -153,8 +161,10 @@ test('el provisioning siembra los tres roles de sistema y le da el de dueño al 
         expect((bool) $roles['profesional']->solo_propios)->toBeTrue()
             ->and((bool) $roles['admin']->solo_propios)->toBeFalse();
 
-        $perfil = DB::table('profesionales')->where('central_user_id', $dueno->id)->first();
-        expect($perfil->rol_id)->toBe((int) $roles['dueno']->id);
+        // El rol cuelga de la CUENTA, no de la ficha de profesional: un
+        // barbero sin acceso al panel no lleva rol y no le hace falta.
+        $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
+        expect($cuenta->rol_id)->toBe((int) $roles['dueno']->id);
     });
 });
 
@@ -165,7 +175,8 @@ test('un rol en uso no se puede borrar', function () {
     (new ProvisionTenantDatabase($tenant))->handle();
 
     // La barandilla vive en la BD (restrictOnDelete), no solo en el service:
-    // borrar el rol de alguien lo dejaría sin permisos de golpe.
+    // borrar el rol de alguien lo dejaría sin permisos de golpe. Lo usa la
+    // CUENTA del dueño, que es donde vive ahora `rol_id`.
     $tenant->run(function () {
         expect(fn () => DB::table('roles')->where('clave', 'dueno')->delete())
             ->toThrow(QueryException::class);

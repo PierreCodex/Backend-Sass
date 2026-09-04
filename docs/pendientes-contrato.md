@@ -216,7 +216,7 @@ Formato de entrada:
       "editable": true,
       "borrable": false,
       "duplicable": true,
-      "empleados_count": 3
+      "usuarios_count": 3
     }
   ],
   "meta": { "…": "paginación de siempre" },
@@ -278,7 +278,140 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 2] Usuarios y Profesionales se separan: `/empleados` deja de existir
+
+Es el cambio más grande hecho hasta ahora y **rehace el módulo 2.A**. Llega
+ahora porque el frontend todavía no lo había conectado y no hay ni un tenant
+real; después del Sprint 3 (que monta `local_profesional` encima) y del 4 (que
+monta las citas y la disponibilidad) habría costado varias veces más.
+
+### Por qué
+
+Nuestro modelo obligaba a que **todo el staff** tuviera fila en
+`profesionales`. El síntoma: para dar de alta a una **recepcionista** había que
+declarar cómo se le paga —`tipo_pago` era obligatorio y `comision_pct` traía un
+50 por defecto—, o sea comisión sobre servicios que no presta. Y al revés, no
+se podía dar de alta a un **barbero sin cuenta**: el email era obligatorio, así
+que una barbería con cinco barberos que no tocan el sistema tenía que
+inventarles cinco correos. Un correo inventado es peor que ninguno: parece un
+canal y no lo es.
+
+AgendaPro lo tiene separado y su guía lo dice sin ambigüedad — el formulario de
+profesional no pide correo, y «crear un usuario a este profesional» es una
+**casilla opcional**.
+
+### El modelo nuevo
+
+| Persona | `users` (central) | `usuarios` (tenant) | `profesionales` (tenant) |
+|---|---|---|---|
+| Recepcionista | ✓ | ✓ con su rol | — |
+| Barbero que no entra al sistema | — | — | ✓ |
+| Barbero que sí entra | ✓ | ✓ | ✓ con `usuario_id` |
+| Dueño que además atiende | ✓ | ✓ | ✓ |
+| Dueño puramente administrativo | ✓ | ✓ | — |
+
+`profesionales.usuario_id` es nullable y `nullOnDelete`: quitarle el acceso a
+alguien **no** se lleva su ficha, sus citas ni sus comisiones.
+
+### Los endpoints
+
+**`/api/empleados` ya no existe.** En su lugar:
+
+- **`/api/usuarios`** — quién entra al panel. CRUD + `POST
+  /usuarios/{id}/invitacion` para reenviar. Solo el dueño (403 al resto), como
+  los roles y por el mismo motivo: quien crea cuentas y reparte roles puede
+  fabricarse un segundo dueño.
+- **`/api/profesionales`** — quién presta los servicios. CRUD +
+  `/profesionales/resumen`. **No** exige ser dueño: dar de alta a un barbero no
+  reparte poder sobre el sistema.
+- **`POST /api/invitacion/aceptar`** — público, para que el invitado elija su
+  contraseña.
+
+### Lo que cambia en los payloads
+
+**Profesional**: `nombre`, `cargo`, `telefono`, `foto`, `tipo_pago` y sus
+campos, `horario`, `excepciones`, `atiende`, `activo`. **Ni email, ni rol, ni
+contraseña.**
+
+Más el atajo opcional, que es la casilla «darle acceso al panel»:
+
+```json
+{ "usuario": { "email": "carmen@elrosal.pe", "rol_id": 3 } }
+```
+
+Si viene, se crea la cuenta y se le manda la invitación. Funciona igual al
+crear que al editar — un barbero que lleva meses sin cuenta y un día la
+necesita. A quien **ya** tiene cuenta no se le toca desde aquí: eso se edita en
+`/usuarios`.
+
+**Cuenta**: `nombre`, `apellido`, `email`, `telefono`, `rol_id`, `activo`.
+**Sin campo de contraseña, ni al crear ni al editar.**
+
+### Nadie escribe la contraseña de nadie
+
+La cuenta nace con una aleatoria que no conoce ni quien la crea, y a la persona
+le llega **«te dieron acceso, crea tu contraseña»** con un enlace de **7 días**.
+Es como lo hace AgendaPro («el usuario deberá establecer su contraseña») y es
+mejor práctica: el jefe no debería conocer la clave de su empleado. De paso, un
+campo menos en el formulario.
+
+Al aceptar la invitación la cuenta queda **verificada**: llegar hasta ahí exige
+haber abierto un enlace enviado a ese correo, que es justo lo que la
+verificación demuestra.
+
+**Hace falta una pantalla nueva** para `/invitacion?token=…&email=…`. Puede ser
+la de reset con otro texto, pero el `POST` es a `/api/invitacion/aceptar`, no a
+`/api/reset-password`: son brokers distintos con caducidades distintas.
+
+**Y el botón de reenviar importa más de lo que parece**: el alta depende de que
+un correo llegue, y con el dominio recién estrenado los correos caen en spam.
+Sin ese botón, la única salida sería borrar la cuenta y volverla a crear.
+
+### El cupo del plan, otra vez más simple
+
+**Cuenta filas activas de `profesionales`.** Sin excepciones, sin mirar roles,
+sin mirar `atiende`. Quien está en esa tabla presta servicios, y punto.
+
+Una cuenta sin ficha de profesional —la recepcionista— **no ocupa plaza**. Es
+el modelo de AgendaPro: usuarios del panel ilimitados, profesionales no.
+
+El 422 del tope cae ahora en **`activo`**.
+
+Y `atiende` recupera su único significado: **si aparece en la tienda pública**.
+Ya no decide el cupo ni si alguien es staff.
+
+### Dos consecuencias visibles en pantalla
+
+**El dueño puede no ser profesional.** Su ficha se crea en el provisioning
+**solo si en el registro respondió `independiente`**. Un negocio que dijo «3-5»
+empieza con **cero** profesionales, y el checklist de onboarding le pide el
+primero — que es justo lo que ese paso siempre quiso decir.
+
+**Dar de baja a un profesional NO le quita la cuenta**, y quitar la cuenta no
+borra al profesional. Son dos decisiones distintas y el diálogo debería
+decirlo: «esta persona conserva su acceso al panel; para quitárselo, ve a
+Usuarios».
+
+### Un bug que conviene tener anotado
+
+El broker de invitaciones escribía el token en la base del **negocio** y no en
+la central, porque dentro de `tenancy.init` la conexión por defecto es la del
+tenant. Trece tests en rojo por una línea. El reset de contraseña se salvaba
+por casualidad —sus rutas son públicas y corren fuera de tenancy—, así que
+ahora los dos brokers fijan `connection` explícitamente. Vale como recordatorio
+general: **cualquier cosa central invocada desde dentro del panel tiene que
+declarar su conexión.**
+
+- **Estado**: hecho (2026-09-04). 40 tests entre los dos módulos; la suite va
+  por 185 y 857 aserciones.
+
+---
+
 ## [Sprint 2] Empleados: el rol pasa a ser `rol_id`, y el cupo cambia de regla
+
+> ⚠️ **SUPERADO el 2026-09-04** por el apartado de arriba: `/empleados` ya
+> no existe y el cupo dejó de mirar `atiende`. Se conserva porque explica
+> cómo se llegó hasta aquí, no lo que hay hoy.
 
 Consecuencia directa de los endpoints de roles. **Rompe el formulario de
 empleados si no se toca**, y por eso llega ahora, antes de que se conecte.
