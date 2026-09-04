@@ -86,7 +86,13 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   default 1) que controla si aparece en agenda y en la tienda pública. El
   dueño la recibe desde el **job de provisioning**, no en la transacción de
   registro: esa fila vive en la BD del tenant, que aún no existe al registrar.
-  El cupo del plan cuenta el staff con independencia de `atiende`.
+  **El cupo del plan cuenta a quien está activo Y atiende** (revisado el
+  2026-09-04; antes contaba a todo el staff). El eje es la agenda, no el rol
+  ni el login: un usuario del panel no cuesta nada, una persona reservable sí.
+  Así una recepcionista no ocupa plaza y un barbero sí, aunque el negocio les
+  invente los roles — y no hay que vigilarlo, porque apagar `atiende` para no
+  pagar quita justo aquello por lo que se pagaba. El dueño no es excepción: si
+  atiende, ocupa su plaza, y un independiente consume 1.
 - **`tenants.id` y `tenants.slug` son cosas DISTINTAS** (cerrado en el
   contrato, Sprint 0):
   - `id`: inmutable, aleatorio, nace en el registro, nombra la BD

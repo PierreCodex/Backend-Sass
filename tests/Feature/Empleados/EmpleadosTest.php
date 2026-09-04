@@ -305,17 +305,15 @@ test('el tipo de pago con sueldo exige monto y período', function () {
 |--------------------------------------------------------------------------
 */
 
-test('con el plan lleno, el alta da 422 en el campo del rol', function () {
-    // Básico: 2 profesionales.
+test('con el plan lleno, el alta da 422 en el campo atiende', function () {
+    // Básico: 2 profesionales. El dueño ya ocupa uno desde el provisioning.
     $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
 
     enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe']))->assertCreated();
-    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe']))->assertCreated();
 
-    enviarEmpleado($this, empleadoValido(['email' => 'tres@elrosal.pe']))
+    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe']))
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol_id'])
-        ->assertJsonPath('errors.rol_id.0', 'Alcanzaste el límite de profesionales de tu plan.');
+        ->assertJsonValidationErrors(['atiende']);
 
     $this->withToken($this->token)->getJson('/api/empleados/resumen')
         ->assertOk()
@@ -324,26 +322,59 @@ test('con el plan lleno, el alta da 422 en el campo del rol', function () {
 });
 
 /*
- * El dueño es el ÚNICO exento. Antes lo estaba también el administrador, y
- * eso dejó de sostenerse en cuanto el negocio pudo crear sus propios roles:
- * si el cupo mirase la clave del rol, bastaría con nombrar administrador a
- * todo el mundo. Un tope que se rodea en dos clics no es un tope.
+ * El eje del cupo es la AGENDA, no el rol ni el login. Un usuario del panel no
+ * cuesta nada; una persona a la que se le puede reservar, sí. Y no hay nada
+ * que vigilar: apagar `atiende` para no pagar quita justo aquello por lo que
+ * se pagaba.
  */
-test('el dueño no consume cupo; un admin sí', function () {
+test('quien no atiende no ocupa plaza, tenga el rol que tenga', function () {
     $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
 
-    // El dueño ya está en `profesionales` desde el provisioning y no cuenta.
+    // El dueño atiende desde el provisioning: no es excepción, ocupa la suya.
     $this->withToken($this->token)->getJson('/api/empleados/resumen')
         ->assertOk()
-        ->assertJsonPath('data.profesionales_activos', 0);
+        ->assertJsonPath('data.profesionales_activos', 1);
 
-    enviarEmpleado($this, empleadoValido(['email' => 'admin@elrosal.pe', 'rol_id' => rolDe('admin')]))
-        ->assertCreated();
+    // Una recepcionista entra al panel pero no sale en la agenda: gratis.
+    enviarEmpleado($this, empleadoValido([
+        'email' => 'recepcion@elrosal.pe',
+        'rol_id' => rolDe('admin'),
+        'atiende' => 0,
+    ]))->assertCreated();
 
     $this->withToken($this->token)->getJson('/api/empleados/resumen')
         ->assertOk()
-        ->assertJsonPath('data.profesionales_activos', 1)
-        ->assertJsonPath('data.limite_profesionales', 2);
+        ->assertJsonPath('data.profesionales_activos', 1);
+
+    // Y todavía cabe el segundo barbero.
+    enviarEmpleado($this, empleadoValido(['email' => 'barbero@elrosal.pe']))->assertCreated();
+
+    $this->withToken($this->token)->getJson('/api/empleados/resumen')
+        ->assertOk()
+        ->assertJsonPath('data.profesionales_activos', 2);
+});
+
+/*
+ * La otra mitad de la barandilla: si el cupo solo mirase el alta, bastaría con
+ * dar de alta a diez con la agenda apagada y encenderlas después.
+ */
+test('encender la agenda de alguien también pasa por el cupo', function () {
+    $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
+
+    $id = enviarEmpleado($this, empleadoValido([
+        'email' => 'recepcion@elrosal.pe',
+        'atiende' => 0,
+    ]))->assertCreated()->json('data.id');
+
+    // Dueño + este: el plan se llena.
+    enviarEmpleado($this, empleadoValido(['email' => 'barbero@elrosal.pe']))->assertCreated();
+
+    enviarEmpleado($this, empleadoValido([
+        'email' => 'recepcion@elrosal.pe',
+        'atiende' => 1,
+    ]), $id)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['atiende']);
 });
 
 test('un rol propio del negocio se le puede asignar a alguien', function () {
@@ -381,22 +412,21 @@ test('un rol propio también consume cupo', function () {
         'permisos' => ['citas' => 'gestionar'],
     ])->assertCreated()->json('data.id');
 
+    // Con el dueño dentro, el Básico solo admite uno más.
     enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe', 'rol_id' => $rolId]))->assertCreated();
-    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe', 'rol_id' => $rolId]))->assertCreated();
 
-    enviarEmpleado($this, empleadoValido(['email' => 'tres@elrosal.pe', 'rol_id' => $rolId]))
+    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe', 'rol_id' => $rolId]))
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol_id']);
+        ->assertJsonValidationErrors(['atiende']);
 });
 
 test('reactivar a un profesional también pasa por el cupo', function () {
     $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
 
     $id = enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe']))->assertCreated()->json('data.id');
-    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe']))->assertCreated();
 
     enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe', 'activo' => 0]), $id)->assertOk();
-    enviarEmpleado($this, empleadoValido(['email' => 'tres@elrosal.pe']))->assertCreated();
+    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe']))->assertCreated();
 
     /*
      * Si el cupo solo mirase el alta, bastaría con dar de baja a uno, crear a
@@ -404,13 +434,14 @@ test('reactivar a un profesional también pasa por el cupo', function () {
      */
     enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe', 'activo' => 1]), $id)
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol_id']);
+        ->assertJsonValidationErrors(['atiende']);
 });
 
 test('el listado trae el resumen del cupo, para ahorrarse una petición', function () {
     $this->withToken($this->token)->getJson('/api/empleados')
         ->assertOk()
-        ->assertJsonPath('resumen.profesionales_activos', 0)
+        // El dueño atiende, así que la cuenta arranca en 1, no en 0.
+        ->assertJsonPath('resumen.profesionales_activos', 1)
         ->assertJsonPath('resumen.limite_profesionales', 5);
 });
 

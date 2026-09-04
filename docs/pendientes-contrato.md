@@ -306,30 +306,47 @@ traducir un id.
 
 ### Los 422 cambian de campo
 
-Todos los errores que antes caían en `rol` ahora caen en **`rol_id`**: el cupo
-del plan («Alcanzaste el límite de profesionales de tu plan.»), «Ya hay un
-dueño en este negocio.» y «El dueño del negocio no puede cambiar de rol.».
+«Ya hay un dueño en este negocio.» y «El dueño del negocio no puede cambiar de
+rol.» pasan de `rol` a **`rol_id`**. El del cupo del plan se muda a
+**`atiende`** — ver abajo.
 
-### El cupo del plan: ahora cuenta todo el staff activo menos el dueño
+### El cupo del plan: cuenta quien está activo Y atiende
 
-Antes contaba solo a quien llevara el rol de sistema `profesional`. Eso dejó de
-sostenerse en cuanto el negocio pudo crear roles propios: bastaba inventar
-«Barbero senior», ponérselo a diez personas y el límite del plan dejaba de
-existir. Un tope que se rodea en dos clics no es un tope.
+Cambia el **eje**, no solo el umbral. Antes contaba por rol (los que llevaban
+el de sistema `profesional`); ahora cuenta a quien aparece en la agenda.
 
-**El administrador pasa a consumir plaza**, que antes no lo hacía. La
-alternativa —eximirlo también— se rodea nombrando administrador a todo el
-mundo, y ahí el negocio ni siquiera pagaría un coste real por hacerlo.
+Es como lo hace AgendaPro y es lo que tiene sentido: **los usuarios del panel
+son ilimitados, los profesionales no**. El coste del producto escala con citas,
+no con logins. Una recepcionista entra al panel y no ocupa plaza; un barbero
+sí, aunque el negocio le haya inventado el rol.
 
-El precio consciente de la regla: una recepcionista ocupa una plaza de
-profesional. Si eso se ve injusto, la salida es ajustar cuántas plazas trae
-cada plan, no volver a un límite que se puede esquivar.
+Tres consecuencias:
 
-`atiende` sigue sin influir (§1.9): el cupo lo consume tener la plaza, no salir
-en la agenda.
+1. **El dueño deja de ser excepción.** Si atiende —y atiende por defecto desde
+   el provisioning— ocupa su plaza. Un independiente consume 1, la suya. Antes
+   consumía 0, lo que hacía que «Básico: 2 profesionales» permitiera en
+   realidad tres personas.
+2. **El rol dejó de importar para el cupo.** El agujero que abrían los roles
+   propios («creo Barbero senior y no cuenta») desaparece solo, sin necesidad
+   de contar por rol.
+3. **No hay nada que vigilar.** Apagar `atiende` para no pagar quita justo
+   aquello por lo que se pagaba: a esa persona deja de podérsele reservar. La
+   única vía que quedaba —dar de alta a diez apagados y encenderlos después—
+   se cierra validando el cupo también al encender el flag, que es lo que se
+   hace.
 
-- **Estado**: hecho (2026-09-04). 26 tests en Empleados, incluidos los dos
-  nuevos —un rol propio se asigna, y un rol propio consume cupo.
+**Para la pantalla**: el 422 del tope cae en `atiende` y el texto ofrece la
+salida — «Alcanzaste el límite de profesionales de tu plan. Puedes darle acceso
+al panel sin agenda, o ampliar tu plan.» Conviene que el interruptor de
+«atiende» esté a la vista en el formulario, porque es la alternativa gratis a
+subir de plan.
+
+**Nota de precio, no de código**: con esta regla no existe plan para un
+independiente. Básico empieza en 2 plazas y un barbero solo necesita 1.
+
+- **Estado**: hecho (2026-09-04). 27 tests en Empleados. Cambia también la
+  línea correspondiente de `CLAUDE.md`, que decía que el cupo contaba el staff
+  con independencia de `atiende`.
 
 ---
 

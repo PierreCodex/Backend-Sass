@@ -76,7 +76,10 @@ class EmpleadoService
     {
         $rol = $this->rolDelNegocio($datos['rol_id']);
 
-        $this->validarCupo($rol, (bool) ($datos['activo'] ?? true));
+        $this->validarCupo(
+            (bool) ($datos['activo'] ?? true),
+            (bool) ($datos['atiende'] ?? true),
+        );
 
         $tenant = $this->tenant();
 
@@ -136,8 +139,8 @@ class EmpleadoService
         $rol = $this->rolDelNegocio($datos['rol_id']);
 
         $this->validarCupo(
-            $rol,
             (bool) ($datos['activo'] ?? $profesional->activo),
+            (bool) ($datos['atiende'] ?? $profesional->atiende),
             $profesional->id,
         );
 
@@ -205,11 +208,9 @@ class EmpleadoService
     /**
      * La tarjeta "Profesionales activos en tu plan".
      *
-     * Se cuenta DENTRO de la base del negocio, por `rol_id`, y no cruzando a
-     * la central por `users.rol`: es una consulta en vez de dos, y no hay JOIN
-     * posible entre bases. Cuenta a los activos con rol de profesional,
-     * `atiende` da igual (§1.9): el cupo lo consume tener la plaza, no salir
-     * en la agenda.
+     * Se cuenta DENTRO de la base del negocio y no cruzando a la central: es
+     * una consulta en vez de dos, y no hay JOIN posible entre bases. Cuenta a
+     * quien está activo Y atiende — ver `validarCupo` para el porqué.
      *
      * @return array{profesionales_activos: int, limite_profesionales: int}
      */
@@ -330,54 +331,50 @@ class EmpleadoService
     }
 
     /**
-     * El cupo del plan, con el 422 en `rol_id` que pinta el formulario.
+     * El cupo del plan: **cuenta quien está activo Y atiende**.
      *
-     * **Consume plaza todo el personal activo menos el dueño**, tenga el rol
-     * que tenga. Antes solo contaba a quien llevara el rol de sistema
-     * `profesional`, y eso dejó de sostenerse en cuanto el negocio pudo crear
-     * roles propios: bastaba inventar «Barbero senior», ponérselo a diez
-     * personas y el límite del plan dejaba de existir. Un tope que se rodea en
-     * dos clics no es un tope.
+     * El eje no es el rol, es la agenda. Un usuario que entra al panel no
+     * cuesta nada; una persona que aparece en la agenda y en la tienda
+     * pública, sí — el coste del producto escala con citas, no con logins. Por
+     * eso una recepcionista no ocupa plaza y un barbero sí, aunque el negocio
+     * les haya inventado los roles.
      *
-     * El precio de la regla es que una recepcionista ocupa una plaza. Es
-     * consciente: la alternativa —eximir también a los administradores— se
-     * rodea nombrando administrador a todo el mundo, y ahí el negocio ni
-     * siquiera pagaría un coste real por hacerlo.
+     * Es además la única versión que no hay que vigilar: apagar `atiende` para
+     * no pagar te quita justo aquello por lo que pagabas, porque a esa persona
+     * deja de poder reservársele. Un límite que se rodea perdiendo lo que
+     * querías robar se defiende solo.
      *
-     * Se comprueba al crear, al REACTIVAR y al cambiar de rol: si solo mirase
-     * el alta, bastaría dar de baja a alguien, crear a otro y reactivar al
-     * primero para pasarse del plan.
+     * El dueño no es excepción: si atiende, ocupa su plaza. Un independiente
+     * consume 1, que es la suya.
+     *
+     * Se comprueba al crear, al REACTIVAR y al ENCENDER `atiende`. Las tres,
+     * porque si solo mirase el alta bastaría con dar de baja a alguien, crear
+     * a otro y reactivar al primero; y si no mirase `atiende`, con dar de alta
+     * a diez apagados y encenderlos después.
      */
-    private function validarCupo(Rol $rol, bool $activo, ?int $excluyendo = null): void
+    private function validarCupo(bool $activo, bool $atiende, ?int $excluyendo = null): void
     {
-        if ($rol->esDueno() || ! $activo) {
+        if (! $activo || ! $atiende) {
             return;
         }
 
         if ($this->profesionalesActivos($excluyendo) >= $this->limite()) {
             throw ValidationException::withMessages([
-                'rol_id' => 'Alcanzaste el límite de profesionales de tu plan.',
+                /*
+                 * El error cae en `atiende` y no en el rol: es el campo que lo
+                 * provoca y el que ofrece la salida. Quien llega al tope puede
+                 * subir de plan o dar acceso al panel sin agenda, que es
+                 * gratis.
+                 */
+                'atiende' => 'Alcanzaste el límite de profesionales de tu plan. Puedes darle acceso al panel sin agenda, o ampliar tu plan.',
             ]);
         }
     }
 
-    /**
-     * Se cuenta DENTRO de la base del negocio y no cruzando a la central por
-     * `users.rol`: es una consulta en vez de dos, y no hay JOIN posible entre
-     * bases.
-     *
-     * `atiende` da igual (§1.9): el cupo lo consume tener la plaza, no salir
-     * en la agenda. Un `rol_id` en NULL también cuenta — no debería existir
-     * viniendo del API, y si aparece es mejor que pese a que sea una rendija.
-     */
     private function profesionalesActivos(?int $excluyendo = null): int
     {
-        $duenoId = $this->rolId('dueno');
-
         return Profesional::where('activo', true)
-            ->when($duenoId !== null, fn ($q) => $q->where(
-                fn ($q) => $q->whereNull('rol_id')->orWhere('rol_id', '!=', $duenoId),
-            ))
+            ->where('atiende', true)
             ->when($excluyendo !== null, fn ($q) => $q->whereKeyNot($excluyendo))
             ->count();
     }
@@ -417,11 +414,6 @@ class EmpleadoService
     private function rolCentral(Rol $rol): string
     {
         return $rol->clave === 'admin' ? 'admin' : 'profesional';
-    }
-
-    private function rolId(string $clave): ?int
-    {
-        return Rol::where('clave', $clave)->value('id');
     }
 
     private function tenant(): Tenant
