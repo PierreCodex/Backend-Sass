@@ -242,11 +242,15 @@ test('un rol que no usa nadie se borra', function () {
 */
 
 /*
- * Si un administrador pudiera gestionar roles, se crearía uno con todo
- * marcado y se lo asignaría: escalada en dos clics. Dar de alta gente y
- * decidir qué puede hacer la gente son permisos distintos.
+ * Leer sí, escribir no.
+ *
+ * Si un administrador pudiera crear roles, se haría uno con todo marcado y se
+ * lo asignaría: escalada en dos clics. Pero tiene que poder LEERLOS, o el
+ * select de rol se queda vacío en el formulario de empleados, que él sí puede
+ * usar. Dar de alta gente y decidir qué puede hacer la gente son permisos
+ * distintos; consultar la lista no es ninguno de los dos.
  */
-test('quien no es dueño recibe 403 en todo el recurso', function () {
+test('quien no es dueño lee los roles, pero no los toca', function () {
     $admin = User::create([
         'tenant_id' => $this->tenant->id,
         'nombre' => 'Lucía',
@@ -256,8 +260,14 @@ test('quien no es dueño recibe 403 en todo el recurso', function () {
     ]);
     $token = $admin->createToken('test')->plainTextToken;
 
-    $this->withToken($token)->getJson('/api/roles')->assertForbidden();
+    $this->withToken($token)->getJson('/api/roles')->assertOk()->assertJsonCount(3, 'data');
+
+    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin')->value('id'));
+    $this->withToken($token)->getJson("/api/roles/{$id}")->assertOk();
+
     $this->withToken($token)->postJson('/api/roles', rolValido())->assertForbidden();
+    $this->withToken($token)->putJson("/api/roles/{$id}", rolValido())->assertForbidden();
+    $this->withToken($token)->deleteJson("/api/roles/{$id}")->assertForbidden();
 });
 
 test('un rol de otro negocio responde 404, no 403', function () {

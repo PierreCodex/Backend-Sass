@@ -20,8 +20,6 @@ class RolController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $this->soloElDueno($request);
-
         $roles = Rol::query()
             ->withCount('profesionales')
             ->when($request->string('search')->trim()->value(), function ($q, string $search) {
@@ -47,10 +45,8 @@ class RolController extends Controller
             ->additional(['modulos' => RolesSistema::MODULOS]);
     }
 
-    public function show(Request $request, Rol $rol): RolResource
+    public function show(Rol $rol): RolResource
     {
-        $this->soloElDueno($request);
-
         return RolResource::make($rol->loadCount('profesionales'));
     }
 
@@ -92,13 +88,25 @@ class RolController extends Controller
     }
 
     /**
-     * Gestionar roles es solo del dueño.
+     * **Escribir** roles es solo del dueño. Leerlos, no.
      *
-     * Si pudiera un administrador, se crearía un rol con todo marcado y se lo
-     * asignaría: escalada de privilegios en dos clics. Por eso el preset de
-     * Administrador trae `empleados: gestionar` pero esto se comprueba aparte
-     * — dar de alta gente y decidir qué puede hacer la gente son dos permisos
-     * distintos.
+     * Si un administrador pudiera crearlos, se haría uno con todo marcado y se
+     * lo asignaría: escalada de privilegios en dos clics. Por eso su preset
+     * trae `empleados: gestionar` y aun así esto se comprueba aparte — dar de
+     * alta gente y decidir qué puede hacer la gente son permisos distintos.
+     *
+     * Pero LEERLOS tiene que poder cualquiera que abra el formulario de
+     * empleados, o el select de rol se queda vacío para el administrador que
+     * sí puede dar altas. Y la lista no es un secreto dentro del negocio: es
+     * su organigrama.
+     *
+     * Se deja abierta a cualquier usuario del tenant, y no a `dueno|admin`,
+     * para no inventar una SEGUNDA tabla de permisos por rol al lado de la que
+     * ya existe. La regla de este proyecto es preguntar por capacidades y
+     * nunca por el rol (`RolesSistema`); mientras esa resolución no exista
+     * —deuda anotada—, un único candado por propiedad es más honesto que dos
+     * reglas paralelas que se separan. Cuando llegue, la lectura pasa a pedir
+     * `empleados.ver`.
      *
      * 403 y no 404: el recurso existe y es del negocio de quien pregunta; lo
      * que falta es rango. El 404 se reserva para lo que es de otro tenant.
