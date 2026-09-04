@@ -542,6 +542,26 @@ test('los empleados de otro negocio: 404, nunca 403', function () {
         ->assertJsonCount(1, 'data');
 });
 
+/*
+ * El panel esconde el grupo Equipo a quien trabaja solo: un independiente que
+ * abre Empleados se encuentra una pantalla con una sola persona, él mismo, y
+ * una matriz de permisos para repartir entre nadie.
+ *
+ * Es una pista de interfaz, no autorización — de ahí la segunda mitad del
+ * test. Esconder un menú no puede cerrar una puerta, o el día que contrate a
+ * alguien habría que migrar algo.
+ */
+test('negocio.rango_profesionales viaja, y no cierra ninguna puerta', function () {
+    $this->tenant->update(['rango_profesionales' => 'independiente']);
+
+    $this->withToken($this->token)->getJson('/api/user')
+        ->assertOk()
+        ->assertJsonPath('data.negocio.rango_profesionales', 'independiente');
+
+    $this->withToken($this->token)->getJson('/api/empleados')->assertOk();
+    $this->withToken($this->token)->getJson('/api/roles')->assertOk();
+});
+
 test('sin sesión → 401', function () {
     $this->getJson('/api/empleados')->assertStatus(401);
     $this->getJson('/api/empleados/resumen')->assertStatus(401);

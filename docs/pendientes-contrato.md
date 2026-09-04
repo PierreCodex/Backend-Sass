@@ -350,6 +350,42 @@ independiente. Básico empieza en 2 plazas y un barbero solo necesita 1.
 
 ---
 
+## [Sprint 2] `negocio.rango_profesionales` sale en el `Usuario`
+
+- **Qué**: `GET /user` y `POST /login` emiten ahora
+  `usuario.negocio.rango_profesionales` con lo que el dueño respondió en el
+  registro: `independiente`, `2`, `3-5`, `6-15` o `+16`.
+
+- **Para qué**: esconder el grupo **Equipo** (Empleados y Roles) a quien
+  trabaja solo. Un independiente que abre Empleados se encuentra una pantalla
+  con una sola persona —él mismo— y una matriz de permisos para repartir entre
+  nadie. Es lo que hace AgendaPro: si respondes «solo yo», no te ofrece añadir
+  profesionales, aunque sí crear usuarios.
+
+- **Es una PISTA, no autorización.** `/empleados` y `/roles` responden igual
+  pase lo que pase con este campo, y hay un test que lo fija. Esconder un menú
+  no puede cerrar una puerta: si lo hiciera, el día que el negocio contrate a
+  alguien habría que migrar algo, y cualquier fallo en la bandera dejaría a
+  alguien fuera de sus propios datos.
+
+- **Que sea reversible.** Esa respuesta se da en cinco segundos al registrarse,
+  antes de conocer el producto, y el barbero que hoy dice «solo yo» contrata el
+  mes que viene. Dos cosas hacen falta y ninguna bloquea hoy:
+  1. Un camino visible para activarlo desde el panel («¿vas a trabajar con más
+     gente?»). El campo se podrá editar desde **`PUT /configuracion`** (módulo
+     2.B); hasta entonces es de solo lectura.
+  2. Que el panel lo trate como valor por defecto y no como verdad: si el
+     negocio ya tiene más de una persona con agenda —dato que `GET /empleados`
+     ya devuelve en `resumen.profesionales_activos`— el grupo se muestra
+     aunque el rango diga `independiente`.
+
+- **Nota de precio**: con el cupo contando agendas, un independiente consume 1
+  plaza (la suya) y no existe plan de 1: Básico empieza en 2.
+
+- **Estado**: hecho (2026-09-04).
+
+---
+
 ## [Sprint 2] Configuración se parte en cuatro secciones de Administración
 
 - **Qué**: `/configuracion` deja de ser un formulario único con cuatro
