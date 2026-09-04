@@ -137,8 +137,30 @@ concretos:
 | `comision_porcentaje`, `monto_sueldo`, `periodo_pago` | `comision_pct`, `sueldo_monto`, `sueldo_periodo` | naming: mapea el Resource |
 | `horario: DiaHorario[]` + `excepciones: []` como arrays separados | un solo JSON `{dias, excepciones}` | compatible: el Resource separa. Sin cambio |
 | `rol` incluye `superadmin` | `users.rol` no lo tiene (vive en `platform_admins`) | gana SQL: un usuario de tenant jamás será superadmin. El union del cliente simplemente nunca recibirá ese valor; opcionalmente pedir limpiarlo del tipo |
-| ¿dueño/admin aparecen en `/empleados`? | `profesionales` exige fila con `tipo_pago`, etc. | **DECIDIDO**: todo miembro del staff tiene fila en `profesionales` (el UNIQUE `central_user_id` lo permite). Se **añade columna `atiende TINYINT(1) NOT NULL DEFAULT 1`**: controla si el profesional aparece en la agenda del panel y en la tienda pública (dueño/admin de oficina → `atiende=0`). El cupo del plan sigue contándose por `rol='profesional'`, independiente de `atiende` |
+| ¿dueño/admin aparecen en `/empleados`? | `profesionales` exige fila con `tipo_pago`, etc. | **DECIDIDO**: todo miembro del staff tiene fila en `profesionales` (el UNIQUE `central_user_id` lo permite). Se **añade columna `atiende TINYINT(1) NOT NULL DEFAULT 1`**: controla si el profesional aparece en la agenda del panel y en la tienda pública (dueño/admin de oficina → `atiende=0`). El cupo del plan sigue contándose por `rol='profesional'`, independiente de `atiende` — ⚠️ **esta última frase quedó SUPERADA el 2026-09-04; ver la nota bajo la tabla** |
 | `usuario` (login con el que inicia sesión) | `users.usuario` **se elimina** (§2.9) | con email único global la columna no aporta y complica el registro. Mientras el tipo `Empleado` del contrato conserve el campo, el Resource emite el **email** en `usuario` (es el identificador real de login); pedir a `Sass-ChiraFlow` retirarlo o renombrarlo. La búsqueda «por usuario» del index pasa a buscar por email |
+
+> ⚠️ **Superado el 2026-09-04 — cómo se cuenta el cupo del plan.**
+>
+> La tabla de arriba se conserva tal cual quedó cerrada; esto **no la reabre**,
+> registra que el dueño del producto la cambió después con información nueva.
+>
+> El cupo **ya no se cuenta por rol**, sino por **agenda**: consume plaza quien
+> esté `activo` **y** con `atiende = 1`. Dejó de sostenerse en cuanto el
+> negocio pudo crear sus propios roles — bastaba inventar «Barbero senior» para
+> que el límite del plan desapareciera— y al mirar cómo lo resuelve AgendaPro
+> se vio que el eje correcto era otro: **los usuarios del panel son ilimitados,
+> los profesionales no**. El coste del producto escala con citas, no con
+> logins, así que una recepcionista no ocupa plaza y un barbero sí.
+>
+> Consecuencias: **el dueño deja de ser excepción** (si atiende, ocupa la
+> suya, y un independiente consume 1), y no queda nada que vigilar — apagar
+> `atiende` para no pagar quita justo aquello por lo que se pagaba, porque a
+> esa persona deja de podérsele reservar. El cupo se valida también al
+> ENCENDER el flag, que era la única rendija que quedaba.
+>
+> La regla vigente está en `CLAUDE.md` § Decisiones de producto y en
+> `EmpleadoService::validarCupo`. El 422 del tope cae en `atiende`.
 
 ### 1.10 `productos` (tenant)
 
