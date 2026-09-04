@@ -49,6 +49,20 @@ class UsuarioResource extends JsonResource
                 // puede construir el enlace a la tienda.
                 'slug' => $this->tenant->slug,
                 'estado' => self::ESTADOS[$this->tenant->estado] ?? 'prueba',
+
+                /*
+                 * Lo que el dueno respondio en el registro: `independiente`,
+                 * `2`, `3-5`, `6-15` o `+16`. Sale para que el panel pueda
+                 * esconder el grupo Equipo a quien trabaja solo — un
+                 * independiente que abre Empleados se encuentra una pantalla
+                 * con una sola persona: el mismo.
+                 *
+                 * Es una PISTA de interfaz, jamas autorizacion: /empleados y
+                 * /roles responden igual pase lo que pase aqui. Esconder un
+                 * menu no puede cerrar una puerta, o el dia que contrate a
+                 * alguien habria que migrar algo.
+                 */
+                'rango_profesionales' => $this->tenant->rango_profesionales,
             ]),
         ];
     }

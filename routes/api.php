@@ -14,6 +14,7 @@ use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
+use App\Http\Controllers\RolController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -92,6 +93,17 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
 
             Route::apiResource('servicios', ServicioController::class);
             Route::apiResource('clientes', ClienteController::class);
+
+            /*
+             * Roles del negocio. Van con Empleados porque alimentan su select
+             * de rol; el `apiResource` es del dueno y nadie mas (la barandilla
+             * esta en el controlador, no aqui: es cuestion de rango, no de
+             * ruta).
+             */
+            Route::apiResource('roles', RolController::class)
+                // Sin esto el parametro seria `{role}` (Str::singular en ingles)
+                // y el binding no casaria con `Rol $rol` del controlador.
+                ->parameters(['roles' => 'rol']);
 
             /*
              * ANTES del apiResource: si no, `empleados/{empleado}` se traga

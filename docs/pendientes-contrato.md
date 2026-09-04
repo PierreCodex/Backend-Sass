@@ -192,10 +192,245 @@ Formato de entrada:
   lo descartó explícitamente («el empleado no se asigna a una sede en este
   formulario»). Resolver en el Sprint 3, con Locales.
 
-- **Ref**: `vistas/empleados.md` § `rol` — valores (deja abierto «¿qué
-  permisos tiene cada uno?»), `app/Support/RolesSistema.php` (matriz de
+- **Ref**: `vistas/empleados.md` § `rol` — valores (deja abierto «qué
+  permisos tiene cada uno»), `app/Support/RolesSistema.php` (matriz de
   presets), migración `tenant/2026_08_27_000001_create_roles_table.php`.
-- **Estado**: pendiente.
+- **Estado**: **endpoints hechos** (2026-09-04, 20 tests). Falta la pantalla y
+  falta que Empleados los use — ver el apartado siguiente.
+
+### Los endpoints, tal como responden
+
+`GET · POST · PUT · DELETE /api/roles` — recurso completo, dentro de
+`tenancy.init` (los roles viven en la BD del negocio).
+
+```json
+{
+  "data": [
+    {
+      "id": 2,
+      "nombre": "Administrador",
+      "clave": "admin",
+      "sistema": true,
+      "permisos": { "dashboard": "ver", "citas": "gestionar", "…": null },
+      "solo_propios": false,
+      "editable": true,
+      "borrable": false,
+      "duplicable": true,
+      "empleados_count": 3
+    }
+  ],
+  "meta": { "…": "paginación de siempre" },
+  "modulos": ["dashboard", "citas", "calendario", "…"]
+}
+```
+
+Cinco cosas que conviene saber antes de maquetar:
+
+1. **`permisos` trae SIEMPRE los 14 módulos**, con `null` donde no hay acceso,
+   aunque el JSON guardado tenga cinco claves. Mismo criterio que el horario
+   de empleados: si llegara con huecos, el formulario necesitaría su propia
+   lista de módulos para rellenarlos y habría dos listas divergiendo. Al
+   guardar da igual mandar los nulls: el backend los descarta.
+2. **`modulos` viaja junto al listado**, fuera de `data`. Es la lista completa
+   y ordenada para las filas de la matriz; no hay endpoint aparte porque son
+   una consulta y una constante para pintar una sola tabla.
+3. **`editable`, `borrable` y `duplicable` vienen resueltos.** No los deduzcas
+   del `sistema` ni de la `clave`: si el formulario reimplementa la matriz,
+   acaba divergiendo de la de aquí, que es la que manda. Sirven para
+   deshabilitar botones; el 422 salta igual si se intenta.
+4. **`clave` es de solo lectura y sobrevive al renombrado.** El negocio puede
+   llamar «Encargada» a Administrador; la clave es lo que deja al backend
+   seguir reconociéndolo. `clave` y `sistema` enviados en el payload se
+   **ignoran** — no son 422, simplemente no existen para la validación.
+5. **Solo el dueño**, en las cinco acciones → `403`. Si lo pudiera un
+   administrador, se crearía un rol con todo marcado y se lo asignaría:
+   escalada en dos clics. Dar de alta gente y decidir qué puede hacer la gente
+   son permisos distintos, aunque el preset de Administrador traiga
+   `empleados: gestionar`.
+
+**Payload de escritura**: `nombre` (requerido, único), `permisos` (objeto
+módulo → `ver` | `gestionar` | `null`) y `solo_propios` (bool). Nada más.
+
+**Los 422 con nombre propio**:
+
+| Situación | Campo | Texto |
+|---|---|---|
+| Nombre repetido | `nombre` | Ya tienes un rol con ese nombre. |
+| Módulo inexistente | `permisos` | Estos módulos no existen: … |
+| Nivel inventado | `permisos.{modulo}` | El nivel de acceso solo puede ser «ver» o «gestionar». |
+| Editar el rol de Dueño | `rol` | El rol del dueño no se puede editar. |
+| Borrar uno de sistema | `rol` | Los roles del sistema no se pueden borrar… |
+| Borrar uno en uso | `rol` | Este rol lo usan N persona(s)… |
+
+**Duplicar no es un endpoint**: es leer un rol y hacer `POST` con sus permisos
+y otro nombre. El de Dueño no se duplica (`duplicable: false`).
+
+---
+
+## [Sprint 2] Empleados: el rol pasa a ser `rol_id`, y el cupo cambia de regla
+
+Consecuencia directa de los endpoints de roles. **Rompe el formulario de
+empleados si no se toca**, y por eso llega ahora, antes de que se conecte.
+
+### El payload
+
+| Antes | Ahora |
+|---|---|
+| `rol: "admin"` (ENUM central) | `rol_id: 4` (id de la tabla `roles` del negocio) |
+
+`rol_id` es requerido y tiene que existir en `/api/roles`. El enum central
+`users.rol` **se deriva** y deja de ser algo que el cliente elige: `admin` si
+el rol tiene esa clave, `profesional` en cualquier otro caso — incluidos los
+roles propios del negocio, que no tienen equivalente central. En la central el
+rol solo sirve para saber quién es el dueño, que es quien maneja facturación;
+los permisos del panel viven en la tabla del negocio.
+
+Sin este cambio, los roles que cree el dueño no se le pueden asignar a nadie:
+el select sería dinámico de adorno.
+
+### La respuesta
+
+`rol` deja de ser un string y pasa a ser objeto, y se añade `rol_id`:
+
+```json
+{
+  "rol_id": 4,
+  "rol": { "id": 4, "nombre": "Recepcionista", "clave": null }
+}
+```
+
+`clave` es `null` en los roles propios y `dueno|admin|profesional` en los tres
+de sistema — sirve para reconocerlos aunque el negocio los renombre. El objeto
+viaja para poder pintar el nombre sin pedir la lista de roles solo para
+traducir un id.
+
+### Los 422 cambian de campo
+
+«Ya hay un dueño en este negocio.» y «El dueño del negocio no puede cambiar de
+rol.» pasan de `rol` a **`rol_id`**. El del cupo del plan se muda a
+**`atiende`** — ver abajo.
+
+### El cupo del plan: cuenta quien está activo Y atiende
+
+Cambia el **eje**, no solo el umbral. Antes contaba por rol (los que llevaban
+el de sistema `profesional`); ahora cuenta a quien aparece en la agenda.
+
+Es como lo hace AgendaPro y es lo que tiene sentido: **los usuarios del panel
+son ilimitados, los profesionales no**. El coste del producto escala con citas,
+no con logins. Una recepcionista entra al panel y no ocupa plaza; un barbero
+sí, aunque el negocio le haya inventado el rol.
+
+Tres consecuencias:
+
+1. **El dueño deja de ser excepción.** Si atiende —y atiende por defecto desde
+   el provisioning— ocupa su plaza. Un independiente consume 1, la suya. Antes
+   consumía 0, lo que hacía que «Básico: 2 profesionales» permitiera en
+   realidad tres personas.
+2. **El rol dejó de importar para el cupo.** El agujero que abrían los roles
+   propios («creo Barbero senior y no cuenta») desaparece solo, sin necesidad
+   de contar por rol.
+3. **No hay nada que vigilar.** Apagar `atiende` para no pagar quita justo
+   aquello por lo que se pagaba: a esa persona deja de podérsele reservar. La
+   única vía que quedaba —dar de alta a diez apagados y encenderlos después—
+   se cierra validando el cupo también al encender el flag, que es lo que se
+   hace.
+
+**Para la pantalla**: el 422 del tope cae en `atiende` y el texto ofrece la
+salida — «Alcanzaste el límite de profesionales de tu plan. Puedes darle acceso
+al panel sin agenda, o ampliar tu plan.» Conviene que el interruptor de
+«atiende» esté a la vista en el formulario, porque es la alternativa gratis a
+subir de plan.
+
+**Nota de precio, no de código**: con esta regla no existe plan para un
+independiente. Básico empieza en 2 plazas y un barbero solo necesita 1.
+
+- **Estado**: hecho (2026-09-04). 27 tests en Empleados. Cambia también la
+  línea correspondiente de `CLAUDE.md`, que decía que el cupo contaba el staff
+  con independencia de `atiende`.
+
+---
+
+## [Sprint 2] `negocio.rango_profesionales` sale en el `Usuario`
+
+- **Qué**: `GET /user` y `POST /login` emiten ahora
+  `usuario.negocio.rango_profesionales` con lo que el dueño respondió en el
+  registro: `independiente`, `2`, `3-5`, `6-15` o `+16`.
+
+- **Para qué**: esconder el grupo **Equipo** (Empleados y Roles) a quien
+  trabaja solo. Un independiente que abre Empleados se encuentra una pantalla
+  con una sola persona —él mismo— y una matriz de permisos para repartir entre
+  nadie. Es lo que hace AgendaPro: si respondes «solo yo», no te ofrece añadir
+  profesionales, aunque sí crear usuarios.
+
+- **Es una PISTA, no autorización.** `/empleados` y `/roles` responden igual
+  pase lo que pase con este campo, y hay un test que lo fija. Esconder un menú
+  no puede cerrar una puerta: si lo hiciera, el día que el negocio contrate a
+  alguien habría que migrar algo, y cualquier fallo en la bandera dejaría a
+  alguien fuera de sus propios datos.
+
+- **Que sea reversible.** Esa respuesta se da en cinco segundos al registrarse,
+  antes de conocer el producto, y el barbero que hoy dice «solo yo» contrata el
+  mes que viene. Dos cosas hacen falta y ninguna bloquea hoy:
+  1. Un camino visible para activarlo desde el panel («¿vas a trabajar con más
+     gente?»). El campo se podrá editar desde **`PUT /configuracion`** (módulo
+     2.B); hasta entonces es de solo lectura.
+  2. Que el panel lo trate como valor por defecto y no como verdad: si el
+     negocio ya tiene más de una persona con agenda —dato que `GET /empleados`
+     ya devuelve en `resumen.profesionales_activos`— el grupo se muestra
+     aunque el rango diga `independiente`.
+
+- **Nota de precio**: con el cupo contando agendas, un independiente consume 1
+  plaza (la suya) y no existe plan de 1: Básico empieza en 2.
+
+- **Estado**: hecho (2026-09-04).
+
+---
+
+## [Sprint 2] Configuración se parte en cuatro secciones de Administración
+
+- **Qué**: `/configuracion` deja de ser un formulario único con cuatro
+  pestañas verticales. Cada pestaña pasa a ser una sección propia de la vista
+  de Administración, con su URL:
+
+  | Pestaña de hoy | URL nueva |
+  |---|---|
+  | Negocio | `/administracion/general/negocio` |
+  | Agenda | `/administracion/general/agenda` |
+  | Marca | `/administracion/general/marca` |
+  | Sitio público | `/administracion/general/sitio-publico` |
+
+  Decidido en la sesión de frontend el 2026-09-04. `nav.ts` declaraba dos
+  secciones (`negocio` y `horario`) y la pantalla tenía cuatro pestañas: no
+  coincidían y había que resolverlo al mudarla. Se resuelve a favor de las
+  cuatro porque el shell de Administración ya lleva índice a la izquierda —
+  el mismo trabajo que hacían las pestañas verticales, así que anidarlas
+  duplicaba la navegación.
+
+  `/configuracion/perfil` (Mi perfil) **no se muda**: es personal, no
+  administración del negocio.
+
+- **Consecuencia para el backend (módulo 2.B)**: `PUT /configuracion` recibirá
+  **payloads parciales**, uno por sección, en vez del objeto completo que
+  describe `vistas/configuracion.md`. El update debe tocar **solo las claves
+  presentes** en la petición: un `fill()` a secas haría que guardar el horario
+  borrara el email y la dirección.
+
+  Es la misma trampa que el `telefono_normalizado` de Clientes (§ Revisión de
+  cierre del Sprint 1). En un PUT parcial, «clave ausente» significa «no lo
+  toques», nunca «ponlo a null».
+
+  Ojo al implementarlo: `sitio_publico_activo` y `mostrar_en_marketplace` en
+  `false` SÍ viajan y SÍ deben escribirse. La distinción es entre clave
+  ausente y clave con valor falso, no entre valor vacío y no vacío.
+
+- **Onboarding**: el paso `horario_local` debe enlazar a
+  `/administracion/general/agenda`. Hoy `DESCRIPCION_PASOS`
+  (`web/src/features/onboarding/types.ts`) lo manda a `/configuracion`.
+
+- **Ref**: `vistas/configuracion.md` § Qué muestra (las cuatro pestañas y el
+  porqué del rediseño del 2026-08-22),
+  `web/src/features/administracion/nav.ts`.
+- **Estado**: pendiente de implementar (módulo 2.B).
 
 ---
 

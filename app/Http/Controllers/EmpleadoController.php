@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Empleados\EmpleadoRequest;
 use App\Http\Resources\EmpleadoResource;
 use App\Models\Profesional;
+use App\Models\Rol;
 use App\Models\User;
 use App\Services\EmpleadoService;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,9 @@ class EmpleadoController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $profesionales = Profesional::query()
+            // El rol viaja en la respuesta: sin el `with`, una pagina de 10
+            // empleados serian 10 consultas mas (N+1).
+            ->with('rol')
             ->when($request->string('search')->trim()->value(), function ($q, string $search) {
                 $q->where(function ($q) use ($search) {
                     $q->where('nombre', 'like', "%{$search}%")
@@ -63,9 +67,9 @@ class EmpleadoController extends Controller
     {
         // Hay exactamente un dueño por negocio y lo crea el registro. Darle ese
         // rol a un alta nueva fabricaría un segundo superusuario.
-        if ($request->validated('rol') === 'dueno') {
+        if (Rol::find($request->validated('rol_id'))?->esDueno()) {
             throw ValidationException::withMessages([
-                'rol' => 'Ya hay un dueño en este negocio.',
+                'rol_id' => 'Ya hay un dueño en este negocio.',
             ]);
         }
 
@@ -78,7 +82,7 @@ class EmpleadoController extends Controller
 
     public function update(EmpleadoRequest $request, Profesional $empleado): EmpleadoResource
     {
-        $this->protegerAlDueno($empleado, $request->validated('rol'));
+        $this->protegerAlDueno($empleado, (int) $request->validated('rol_id'));
 
         return EmpleadoResource::make($this->service->actualizar(
             $empleado,
@@ -96,7 +100,7 @@ class EmpleadoController extends Controller
          * lleva facturación y la creó el provisioning; borrarla deja al negocio
          * sin nadie que pueda pagar y solo se arregla entrando a la base.
          */
-        if ($usuario?->rol === 'dueno') {
+        if ($empleado->rol?->esDueno()) {
             throw ValidationException::withMessages([
                 'empleado' => 'Al dueño del negocio no se le puede dar de baja.',
             ]);
@@ -122,19 +126,26 @@ class EmpleadoController extends Controller
      * facturación, y dárselo a otro fabrica un segundo superusuario. Cambiar de
      * dueño es una operación de soporte, no un select del formulario.
      */
-    private function protegerAlDueno(Profesional $empleado, ?string $rolNuevo): void
+    private function protegerAlDueno(Profesional $empleado, int $rolNuevo): void
     {
-        $esDueno = User::find($empleado->central_user_id)?->rol === 'dueno';
+        /*
+         * Se mira el rol del NEGOCIO y no `users.rol`: desde que el rol lo
+         * elige el dueño de entre los suyos, el central es un valor derivado.
+         * Preguntarle a él sería preguntarle a la copia. Además ahorra una
+         * consulta a la otra base.
+         */
+        $esDueno = (bool) $empleado->rol?->esDueno();
+        $seraDueno = (bool) Rol::find($rolNuevo)?->esDueno();
 
-        if ($esDueno && $rolNuevo !== 'dueno') {
+        if ($esDueno && ! $seraDueno) {
             throw ValidationException::withMessages([
-                'rol' => 'El dueño del negocio no puede cambiar de rol.',
+                'rol_id' => 'El dueño del negocio no puede cambiar de rol.',
             ]);
         }
 
-        if (! $esDueno && $rolNuevo === 'dueno') {
+        if (! $esDueno && $seraDueno) {
             throw ValidationException::withMessages([
-                'rol' => 'Ya hay un dueño en este negocio.',
+                'rol_id' => 'Ya hay un dueño en este negocio.',
             ]);
         }
     }

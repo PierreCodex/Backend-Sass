@@ -37,7 +37,18 @@ class EmpleadoResource extends JsonResource
              */
             'usuario' => $usuario?->email,
             'email' => $usuario?->email,
-            'rol' => $usuario?->rol,
+            /*
+             * El rol del NEGOCIO, no el ENUM central. `rol_id` es lo que come
+             * el formulario; el objeto es para pintar el nombre sin pedir la
+             * lista de roles solo para traducir un id. `clave` viaja porque
+             * distingue a los tres de sistema aunque el negocio los renombre.
+             */
+            'rol_id' => $this->rol_id,
+            'rol' => $this->whenLoaded('rol', fn () => [
+                'id' => $this->rol->id,
+                'nombre' => $this->rol->nombre,
+                'clave' => $this->rol->clave,
+            ]),
 
             'cargo' => $this->cargo,
             'telefono' => $this->telefono,

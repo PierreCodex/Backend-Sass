@@ -61,9 +61,13 @@ class EmpleadoRequest extends FormRequest
              */
             'password' => [$empleado === null ? 'required' : 'nullable', 'string', 'min:8'],
 
-            // `admin`, no `administrador`: es lo que dice el contrato y lo que
-            // acepta el ENUM de `users.rol`.
-            'rol' => ['required', Rule::in(User::ROLES)],
+            /*
+             * El rol es ahora uno de la tabla `roles` del negocio, no el ENUM
+             * central: es lo que deja asignar los que crea el dueño. El
+             * `users.rol` central se DERIVA de su clave (ver EmpleadoService)
+             * y deja de ser un dato que el cliente elige.
+             */
+            'rol_id' => ['required', 'integer', Rule::exists('roles', 'id')],
 
             'cargo' => ['nullable', 'string', 'max:100'],
 
