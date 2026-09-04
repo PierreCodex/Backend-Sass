@@ -35,7 +35,16 @@ final class RolesSistema
     {
         return [
             [
-                'nombre' => 'Dueño',
+                /*
+                 * «Administrador general» y no «Dueño»: quien registra la
+                 * cuenta no siempre es el propietario del negocio —en una
+                 * clínica o un salón con socios suele ser la administradora—
+                 * y decirle «Dueño» en su panel seria falso. Esto describe lo
+                 * que hace, que es cierto siempre. La clave sigue siendo
+                 * `dueno`: es lo que reconoce el provisioning, las barandillas
+                 * de empleados y el control de facturacion.
+                 */
+                'nombre' => 'Administrador general',
                 'clave' => 'dueno',
                 'sistema' => true,
                 'solo_propios' => false,
