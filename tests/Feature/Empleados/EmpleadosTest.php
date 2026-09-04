@@ -3,6 +3,7 @@
 use App\Jobs\ProvisionTenantDatabase;
 use App\Models\Plan;
 use App\Models\Profesional;
+use App\Models\Rol;
 use App\Models\User;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Http\UploadedFile;
@@ -37,13 +38,19 @@ function enviarEmpleado(object $test, array $datos, ?int $id = null): TestRespon
     return $test->withToken($test->token)->post($url, $datos, ['Accept' => 'application/json']);
 }
 
+/** El id de un rol de sistema dentro de la base del negocio. */
+function rolDe(string $clave): int
+{
+    return test()->tenant->run(fn () => Rol::where('clave', $clave)->value('id'));
+}
+
 function empleadoValido(array $extra = []): array
 {
     return array_merge([
         'nombre' => 'Dra. Carmen Ríos',
         'email' => 'carmen.rios@elrosal.pe',
         'password' => 'secreta123',
-        'rol' => 'profesional',
+        'rol_id' => rolDe('profesional'),
         'cargo' => 'doctor cirujano',
         'telefono' => '+51987441220',
         'tipo_pago' => 'comision',
@@ -66,7 +73,8 @@ test('crear escribe en la central y en el negocio, y devuelve el empleado compue
     $data = enviarEmpleado($this, empleadoValido())->assertCreated()->json('data');
 
     expect($data['nombre'])->toBe('Dra. Carmen Ríos')
-        ->and($data['rol'])->toBe('profesional')
+        ->and($data['rol']['clave'])->toBe('profesional')
+        ->and($data['rol_id'])->toBe(rolDe('profesional'))
         // `usuario` lleva el email: la columna `users.usuario` se eliminó.
         ->and($data['usuario'])->toBe('carmen.rios@elrosal.pe')
         ->and($data['email'])->toBe('carmen.rios@elrosal.pe')
@@ -297,7 +305,7 @@ test('el tipo de pago con sueldo exige monto y período', function () {
 |--------------------------------------------------------------------------
 */
 
-test('con el plan lleno, el alta de un profesional da 422 en el campo rol', function () {
+test('con el plan lleno, el alta da 422 en el campo del rol', function () {
     // Básico: 2 profesionales.
     $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
 
@@ -306,8 +314,8 @@ test('con el plan lleno, el alta de un profesional da 422 en el campo rol', func
 
     enviarEmpleado($this, empleadoValido(['email' => 'tres@elrosal.pe']))
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol'])
-        ->assertJsonPath('errors.rol.0', 'Alcanzaste el límite de profesionales de tu plan.');
+        ->assertJsonValidationErrors(['rol_id'])
+        ->assertJsonPath('errors.rol_id.0', 'Alcanzaste el límite de profesionales de tu plan.');
 
     $this->withToken($this->token)->getJson('/api/empleados/resumen')
         ->assertOk()
@@ -315,17 +323,70 @@ test('con el plan lleno, el alta de un profesional da 422 en el campo rol', func
         ->assertJsonPath('data.limite_profesionales', 2);
 });
 
-test('el dueño no consume cupo, y un admin tampoco', function () {
+/*
+ * El dueño es el ÚNICO exento. Antes lo estaba también el administrador, y
+ * eso dejó de sostenerse en cuanto el negocio pudo crear sus propios roles:
+ * si el cupo mirase la clave del rol, bastaría con nombrar administrador a
+ * todo el mundo. Un tope que se rodea en dos clics no es un tope.
+ */
+test('el dueño no consume cupo; un admin sí', function () {
     $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
 
-    enviarEmpleado($this, empleadoValido(['email' => 'admin@elrosal.pe', 'rol' => 'admin']))->assertCreated();
-
-    // El dueño está en `profesionales` desde el provisioning y el admin acaba
-    // de entrar: ninguno cuenta, así que quedan las 2 plazas enteras.
+    // El dueño ya está en `profesionales` desde el provisioning y no cuenta.
     $this->withToken($this->token)->getJson('/api/empleados/resumen')
         ->assertOk()
-        ->assertJsonPath('data.profesionales_activos', 0)
+        ->assertJsonPath('data.profesionales_activos', 0);
+
+    enviarEmpleado($this, empleadoValido(['email' => 'admin@elrosal.pe', 'rol_id' => rolDe('admin')]))
+        ->assertCreated();
+
+    $this->withToken($this->token)->getJson('/api/empleados/resumen')
+        ->assertOk()
+        ->assertJsonPath('data.profesionales_activos', 1)
         ->assertJsonPath('data.limite_profesionales', 2);
+});
+
+test('un rol propio del negocio se le puede asignar a alguien', function () {
+    $rolId = $this->withToken($this->token)->postJson('/api/roles', [
+        'nombre' => 'Recepcionista',
+        'permisos' => ['citas' => 'gestionar', 'clientes' => 'gestionar'],
+    ])->assertCreated()->json('data.id');
+
+    $data = enviarEmpleado($this, empleadoValido(['rol_id' => $rolId]))
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['rol']['nombre'])->toBe('Recepcionista')
+        // Un rol propio no tiene equivalente central: la `clave` es null.
+        ->and($data['rol']['clave'])->toBeNull();
+
+    /*
+     * `users.rol` se DERIVA y cae en `profesional`, que es el suelo. En la
+     * central el rol solo sirve para saber quién es el dueño; los permisos del
+     * panel viven en la tabla `roles` del negocio.
+     */
+    expect(User::where('email', 'carmen.rios@elrosal.pe')->value('rol'))->toBe('profesional');
+});
+
+/*
+ * El agujero que motivó la regla del cupo: con la anterior, el negocio creaba
+ * «Barbero senior», se lo ponía a todo el mundo y el límite del plan dejaba de
+ * existir.
+ */
+test('un rol propio también consume cupo', function () {
+    $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
+
+    $rolId = $this->withToken($this->token)->postJson('/api/roles', [
+        'nombre' => 'Barbero senior',
+        'permisos' => ['citas' => 'gestionar'],
+    ])->assertCreated()->json('data.id');
+
+    enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe', 'rol_id' => $rolId]))->assertCreated();
+    enviarEmpleado($this, empleadoValido(['email' => 'dos@elrosal.pe', 'rol_id' => $rolId]))->assertCreated();
+
+    enviarEmpleado($this, empleadoValido(['email' => 'tres@elrosal.pe', 'rol_id' => $rolId]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['rol_id']);
 });
 
 test('reactivar a un profesional también pasa por el cupo', function () {
@@ -343,7 +404,7 @@ test('reactivar a un profesional también pasa por el cupo', function () {
      */
     enviarEmpleado($this, empleadoValido(['email' => 'uno@elrosal.pe', 'activo' => 1]), $id)
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol']);
+        ->assertJsonValidationErrors(['rol_id']);
 });
 
 test('el listado trae el resumen del cupo, para ahorrarse una petición', function () {
@@ -378,7 +439,7 @@ test('el dueño aparece en el listado: todo el staff tiene ficha', function () {
     $this->withToken($this->token)->getJson('/api/empleados')
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.rol', 'dueno')
+        ->assertJsonPath('data.0.rol.clave', 'dueno')
         ->assertJsonPath('data.0.nombre', 'María Quispe');
 });
 
@@ -391,9 +452,9 @@ test('el dueño aparece en el listado: todo el staff tiene ficha', function () {
 test('al dueño no se le cambia el rol ni se le da de baja', function () {
     $id = $this->tenant->run(fn () => DB::table('profesionales')->value('id'));
 
-    enviarEmpleado($this, empleadoValido(['email' => $this->user->email, 'rol' => 'admin']), $id)
+    enviarEmpleado($this, empleadoValido(['email' => $this->user->email, 'rol_id' => rolDe('admin')]), $id)
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol']);
+        ->assertJsonValidationErrors(['rol_id']);
 
     $this->withToken($this->token)->deleteJson('/api/empleados/'.$id)
         ->assertStatus(422)
@@ -401,10 +462,10 @@ test('al dueño no se le cambia el rol ni se le da de baja', function () {
 });
 
 test('nadie se asciende a dueño: ya hay uno', function () {
-    enviarEmpleado($this, empleadoValido(['rol' => 'dueno']))
+    enviarEmpleado($this, empleadoValido(['rol_id' => rolDe('dueno')]))
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['rol'])
-        ->assertJsonPath('errors.rol.0', 'Ya hay un dueño en este negocio.');
+        ->assertJsonValidationErrors(['rol_id'])
+        ->assertJsonPath('errors.rol_id.0', 'Ya hay un dueño en este negocio.');
 });
 
 test('dar de baja borra el perfil y la cuenta, y el ex-empleado no entra', function () {

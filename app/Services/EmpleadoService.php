@@ -62,6 +62,10 @@ class EmpleadoService
     {
         $profesional->usuarioCentral = User::find($profesional->central_user_id);
 
+        // `loadMissing` y no `load`: tras una edicion el rol puede venir ya
+        // cargado y volver a pedirlo seria una consulta de mas.
+        $profesional->loadMissing('rol');
+
         return $profesional;
     }
 
@@ -70,18 +74,20 @@ class EmpleadoService
      */
     public function crear(array $datos, array $archivos): Profesional
     {
-        $this->validarCupo($datos['rol'], (bool) ($datos['activo'] ?? true));
+        $rol = $this->rolDelNegocio($datos['rol_id']);
+
+        $this->validarCupo($rol, (bool) ($datos['activo'] ?? true));
 
         $tenant = $this->tenant();
 
         // La central primero: si el email choca, no hemos tocado el negocio.
-        $usuario = DB::connection($this->conexionCentral())->transaction(function () use ($datos, $tenant) {
+        $usuario = DB::connection($this->conexionCentral())->transaction(function () use ($datos, $tenant, $rol) {
             $usuario = new User([
                 'tenant_id' => $tenant->id,
                 'nombre' => $datos['nombre'],
                 'email' => $datos['email'],
                 'password' => $datos['password'],
-                'rol' => $datos['rol'],
+                'rol' => $this->rolCentral($rol),
                 'telefono' => $datos['telefono'] ?? null,
                 'activo' => (bool) ($datos['activo'] ?? true),
             ]);
@@ -127,8 +133,10 @@ class EmpleadoService
     {
         $usuario = User::findOrFail($profesional->central_user_id);
 
+        $rol = $this->rolDelNegocio($datos['rol_id']);
+
         $this->validarCupo(
-            $datos['rol'],
+            $rol,
             (bool) ($datos['activo'] ?? $profesional->activo),
             $profesional->id,
         );
@@ -136,11 +144,11 @@ class EmpleadoService
         // Copia para poder deshacer si la escritura del negocio falla.
         $antes = $usuario->getOriginal();
 
-        DB::connection($this->conexionCentral())->transaction(function () use ($usuario, $datos) {
+        DB::connection($this->conexionCentral())->transaction(function () use ($usuario, $datos, $rol) {
             $usuario->fill([
                 'nombre' => $datos['nombre'],
                 'email' => $datos['email'],
-                'rol' => $datos['rol'],
+                'rol' => $this->rolCentral($rol),
                 'telefono' => $datos['telefono'] ?? null,
                 'activo' => (bool) ($datos['activo'] ?? $usuario->activo),
             ]);
@@ -221,7 +229,7 @@ class EmpleadoService
         $conSueldo = in_array($datos['tipo_pago'], Profesional::TIPOS_CON_SUELDO, true);
 
         $profesional->fill([
-            'rol_id' => $this->rolId($datos['rol']),
+            'rol_id' => $datos['rol_id'],
             'nombre' => $datos['nombre'],
             'cargo' => $datos['cargo'] ?? null,
             'telefono' => $datos['telefono'] ?? null,
@@ -322,37 +330,54 @@ class EmpleadoService
     }
 
     /**
-     * El cupo del plan, con el 422 en `rol` que pide la ficha.
+     * El cupo del plan, con el 422 en `rol_id` que pinta el formulario.
      *
-     * Se comprueba tanto al crear como al REACTIVAR o al ascender a
-     * profesional: si solo mirase el alta, bastaría dar de baja a alguien,
-     * crear a otro y reactivar al primero para pasarse del plan.
+     * **Consume plaza todo el personal activo menos el dueño**, tenga el rol
+     * que tenga. Antes solo contaba a quien llevara el rol de sistema
+     * `profesional`, y eso dejó de sostenerse en cuanto el negocio pudo crear
+     * roles propios: bastaba inventar «Barbero senior», ponérselo a diez
+     * personas y el límite del plan dejaba de existir. Un tope que se rodea en
+     * dos clics no es un tope.
+     *
+     * El precio de la regla es que una recepcionista ocupa una plaza. Es
+     * consciente: la alternativa —eximir también a los administradores— se
+     * rodea nombrando administrador a todo el mundo, y ahí el negocio ni
+     * siquiera pagaría un coste real por hacerlo.
+     *
+     * Se comprueba al crear, al REACTIVAR y al cambiar de rol: si solo mirase
+     * el alta, bastaría dar de baja a alguien, crear a otro y reactivar al
+     * primero para pasarse del plan.
      */
-    private function validarCupo(string $rol, bool $activo, ?int $excluyendo = null): void
+    private function validarCupo(Rol $rol, bool $activo, ?int $excluyendo = null): void
     {
-        if ($rol !== 'profesional' || ! $activo) {
+        if ($rol->esDueno() || ! $activo) {
             return;
         }
 
-        $limite = $this->limite();
-
-        if ($this->profesionalesActivos($excluyendo) >= $limite) {
+        if ($this->profesionalesActivos($excluyendo) >= $this->limite()) {
             throw ValidationException::withMessages([
-                'rol' => 'Alcanzaste el límite de profesionales de tu plan.',
+                'rol_id' => 'Alcanzaste el límite de profesionales de tu plan.',
             ]);
         }
     }
 
+    /**
+     * Se cuenta DENTRO de la base del negocio y no cruzando a la central por
+     * `users.rol`: es una consulta en vez de dos, y no hay JOIN posible entre
+     * bases.
+     *
+     * `atiende` da igual (§1.9): el cupo lo consume tener la plaza, no salir
+     * en la agenda. Un `rol_id` en NULL también cuenta — no debería existir
+     * viniendo del API, y si aparece es mejor que pese a que sea una rendija.
+     */
     private function profesionalesActivos(?int $excluyendo = null): int
     {
-        $rolId = $this->rolId('profesional');
+        $duenoId = $this->rolId('dueno');
 
-        if ($rolId === null) {
-            return 0;
-        }
-
-        return Profesional::where('rol_id', $rolId)
-            ->where('activo', true)
+        return Profesional::where('activo', true)
+            ->when($duenoId !== null, fn ($q) => $q->where(
+                fn ($q) => $q->whereNull('rol_id')->orWhere('rol_id', '!=', $duenoId),
+            ))
             ->when($excluyendo !== null, fn ($q) => $q->whereKeyNot($excluyendo))
             ->count();
     }
@@ -365,6 +390,33 @@ class EmpleadoService
         // verdad, no un NULL mágico, así que la resta y la comparación salen
         // solas y `limite_profesionales` siempre es un número.
         return (int) ($tenant->plan?->max_profesionales ?? 0) + (int) $tenant->extra_profesionales;
+    }
+
+    /**
+     * El rol elegido, buscado en la base del negocio.
+     *
+     * `findOrFail` y no una consulta suelta: el Form Request ya comprobó que
+     * existe, así que llegar aquí sin él significa que alguien lo borró entre
+     * la validación y el guardado — un 500 honesto es mejor que seguir con un
+     * null.
+     */
+    private function rolDelNegocio(int $id): Rol
+    {
+        return Rol::findOrFail($id);
+    }
+
+    /**
+     * El `users.rol` central se DERIVA del rol del negocio; no lo elige nadie.
+     *
+     * En la central el rol solo sirve para una cosa: saber quién es el dueño,
+     * que es quien maneja facturación. Los permisos del panel viven en la
+     * tabla `roles` del negocio. Un rol propio («Recepcionista») no tiene
+     * equivalente central, así que cae en `profesional`: es el suelo, no una
+     * descripción de su puesto.
+     */
+    private function rolCentral(Rol $rol): string
+    {
+        return $rol->clave === 'admin' ? 'admin' : 'profesional';
     }
 
     private function rolId(string $clave): ?int

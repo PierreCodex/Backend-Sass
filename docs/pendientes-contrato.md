@@ -267,6 +267,72 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 2] Empleados: el rol pasa a ser `rol_id`, y el cupo cambia de regla
+
+Consecuencia directa de los endpoints de roles. **Rompe el formulario de
+empleados si no se toca**, y por eso llega ahora, antes de que se conecte.
+
+### El payload
+
+| Antes | Ahora |
+|---|---|
+| `rol: "admin"` (ENUM central) | `rol_id: 4` (id de la tabla `roles` del negocio) |
+
+`rol_id` es requerido y tiene que existir en `/api/roles`. El enum central
+`users.rol` **se deriva** y deja de ser algo que el cliente elige: `admin` si
+el rol tiene esa clave, `profesional` en cualquier otro caso — incluidos los
+roles propios del negocio, que no tienen equivalente central. En la central el
+rol solo sirve para saber quién es el dueño, que es quien maneja facturación;
+los permisos del panel viven en la tabla del negocio.
+
+Sin este cambio, los roles que cree el dueño no se le pueden asignar a nadie:
+el select sería dinámico de adorno.
+
+### La respuesta
+
+`rol` deja de ser un string y pasa a ser objeto, y se añade `rol_id`:
+
+```json
+{
+  "rol_id": 4,
+  "rol": { "id": 4, "nombre": "Recepcionista", "clave": null }
+}
+```
+
+`clave` es `null` en los roles propios y `dueno|admin|profesional` en los tres
+de sistema — sirve para reconocerlos aunque el negocio los renombre. El objeto
+viaja para poder pintar el nombre sin pedir la lista de roles solo para
+traducir un id.
+
+### Los 422 cambian de campo
+
+Todos los errores que antes caían en `rol` ahora caen en **`rol_id`**: el cupo
+del plan («Alcanzaste el límite de profesionales de tu plan.»), «Ya hay un
+dueño en este negocio.» y «El dueño del negocio no puede cambiar de rol.».
+
+### El cupo del plan: ahora cuenta todo el staff activo menos el dueño
+
+Antes contaba solo a quien llevara el rol de sistema `profesional`. Eso dejó de
+sostenerse en cuanto el negocio pudo crear roles propios: bastaba inventar
+«Barbero senior», ponérselo a diez personas y el límite del plan dejaba de
+existir. Un tope que se rodea en dos clics no es un tope.
+
+**El administrador pasa a consumir plaza**, que antes no lo hacía. La
+alternativa —eximirlo también— se rodea nombrando administrador a todo el
+mundo, y ahí el negocio ni siquiera pagaría un coste real por hacerlo.
+
+El precio consciente de la regla: una recepcionista ocupa una plaza de
+profesional. Si eso se ve injusto, la salida es ajustar cuántas plazas trae
+cada plan, no volver a un límite que se puede esquivar.
+
+`atiende` sigue sin influir (§1.9): el cupo lo consume tener la plaza, no salir
+en la agenda.
+
+- **Estado**: hecho (2026-09-04). 26 tests en Empleados, incluidos los dos
+  nuevos —un rol propio se asigna, y un rol propio consume cupo.
+
+---
+
 ## [Sprint 2] Configuración se parte en cuatro secciones de Administración
 
 - **Qué**: `/configuracion` deja de ser un formulario único con cuatro
