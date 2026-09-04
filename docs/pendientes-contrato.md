@@ -386,6 +386,107 @@ independiente. Básico empieza en 2 plazas y un barbero solo necesita 1.
 
 ---
 
+## [Sprint 2] Configuración (2.B): el PUT acepta trozos, y otras cuatro cosas
+
+`GET /api/configuracion` y `PUT /api/configuracion` (multipart con
+`POST` + `_method=PUT` si van logo o portada). Hechos el 2026-09-04, 18 tests.
+
+### 1. El PUT ya no exige el objeto completo
+
+El contrato dice hoy «el `PUT` envía el objeto completo, no un parche». Con la
+pantalla partida en cuatro secciones de Administración eso deja de ser posible,
+así que **todas las reglas son `sometimes`**: llega lo que llega y se toca solo
+eso. Un cliente que mande los 19 campos sigue funcionando igual — el objeto
+completo es un caso particular del parcial.
+
+**Hay que actualizar esa frase del contrato** (se edita desde `Sass-ChiraFlow`).
+
+Lo que garantiza el backend: guardar la sección de Agenda no borra el email ni
+la dirección que escribió la de Negocio, y tampoco el `informacion_adicional`,
+que vive en el JSON. Tiene test propio, porque es exactamente la trampa que se
+llevó por delante el `telefono_normalizado` de Clientes.
+
+Y la distinción que importa al mandar: **clave ausente** significa «no lo
+toques»; **clave presente con valor vacío** sí escribe. Así que `false` en
+`sitio_publico_activo` se guarda, y `email: ""` vacía el campo de verdad.
+
+### 2. Defaults que salen del GET aunque nadie los haya escrito
+
+Un negocio recién provisionado tiene el JSON vacío. El GET devuelve igualmente:
+
+| Campo | Default |
+|---|---|
+| `horario_apertura` / `horario_cierre` | `09:00` / `20:00` |
+| `agenda.modo_intervalo` | `duracion_servicio` |
+| `agenda.intervalo_min` | `15` |
+
+Son defaults de **aplicación**, no de la BD (§1.6). Las columnas sí traen el
+suyo de la migración: `zona_horaria` = `America/Lima`,
+`sitio_publico_activo` = `true`, `mostrar_en_marketplace` = `false`.
+
+⚠️ **Los colores por defecto no son los de la ficha.** `vistas/configuracion.md`
+dice `#7c3aed` y `#0ea5e9`, que eran los del Laravel viejo; las columnas de
+`tenants` traen **`#4f46e5`** y **`#06b6d4`**. Manda la migración. Si los de la
+ficha son los buenos, se cambia el default de la columna y se avisa.
+
+### 3. `agenda.intervalo_min` solo viaja con la rejilla fija
+
+Con `modo_intervalo: "fijo"` es **obligatorio** (entero, 5–120) → 422 en
+`agenda.intervalo_min` si falta. Con `duracion_servicio` el paso lo pone el
+servicio, así que se ignora aunque se mande.
+
+Detalle al implementar la sección: **los dos campos de `agenda` viajan juntos**.
+Mandar solo `intervalo_min` sin `modo_intervalo` no hace nada, porque la regla
+se apoya en el modo para saber si aplica.
+
+### 4. `zona_horaria` se valida como zona IANA de verdad
+
+La ficha la deja como texto libre y su propia lista de pendientes pide un
+select. El backend ya no acepta cualquier cosa: **`America/Lima` sí, `Lima` o
+`GMT-5` no** → 422. Es la regla 6 del CLAUDE.md — cada timestamp de negocio se
+interpreta en esta zona, y un valor inventado hace que todas las horas de la
+agenda salgan mal sin que nadie sepa por qué: nadie ve un error, solo citas a
+la hora equivocada.
+
+**Y no hay que buscar la lista en ningún sitio: viaja con el GET.**
+`zonas_horarias` sale FUERA de `data`, junto al negocio, con las 419 zonas IANA
+— mismo criterio que `modulos` en el listado de roles: la pantalla necesita el
+valor y las opciones, y un endpoint aparte serían dos peticiones para un campo.
+El PUT no la repite, porque quien está guardando ya la tiene.
+
+Sale como array de identificadores, sin etiquetas ni agrupación: los rótulos
+los pone el frontend (convención del CLAUDE.md) y el desfase lo calcula el
+navegador con `Intl` si lo queréis mostrar.
+
+Lo que garantiza el backend, y tiene test: **el `PUT` acepta TODAS las que el
+`GET` ofrece** — salen de la misma fuente que usa el validador. Un select que
+proponga algo que luego da 422 sería peor que un campo de texto, porque el
+usuario elige de una lista y aun así se le rechaza.
+
+### 5. El resto, sin sorpresas
+
+- **`slug` sale en el GET y el PUT lo ignora**: lo fija el paso 1 del
+  onboarding y forma el subdominio; cambiarlo dejaría muerto cada enlace
+  repartido. Mandarlo no da 422, simplemente no existe para la validación.
+- **`logo` y `cover`**: misma convención que el resto del multipart — no mandar
+  el archivo significa «déjalo como está», y quitarlo necesita
+  **`logo_eliminar=1`** / **`cover_eliminar=1`**. `logo_url` y `cover_url`
+  salen por `/api/archivos/{tenant}/negocio/…`, servibles sin sesión (la
+  tienda pública los necesita).
+- **`latitud` y `longitud` salen como número**, no como el string que devuelve
+  el DECIMAL de MySQL. Fuera de rango → 422 en su campo.
+- **Colores**: hex de 6 dígitos obligatorio; la columna es `char(7)` y con
+  MySQL estricto cualquier otra cosa sería un 500.
+- **Onboarding**: informar `horario_apertura` u `horario_cierre` marca el paso
+  `horario_local`. Guardar cualquier otra sección no lo marca.
+- **Aislación**: el negocio sale SIEMPRE del token. Aquí no hay `{id}` en la
+  ruta ni base separada que haga de red —la fila del vecino está en la misma
+  tabla, a un id de distancia—, así que esa es toda la defensa, y tiene test.
+
+- **Estado**: hecho (2026-09-04). Suite: 177 tests, 854 aserciones.
+
+---
+
 ## [Sprint 2] Configuración se parte en cuatro secciones de Administración
 
 - **Qué**: `/configuracion` deja de ser un formulario único con cuatro
