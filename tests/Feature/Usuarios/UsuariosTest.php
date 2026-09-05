@@ -101,6 +101,59 @@ test('la invitación deja elegir contraseña, y con ella se entra', function () 
         ->assertJsonPath('data.usuario.email', 'recepcion@elrosal.pe');
 });
 
+/*
+ * El contenido del correo NO es decoración.
+ *
+ * Recibir sin haberlo pedido un enlace para «crear una contraseña» tiene
+ * exactamente la forma de una estafa. Lo unico que lo desmiente es reconocer
+ * quien te dio de alta y donde — y saber con que correo vas a entrar, que puede
+ * no ser el que tu habrias elegido porque te lo puso otra persona.
+ */
+test('la invitación dice quién invita, desde qué negocio y con qué correo', function () {
+    $this->tenant->update(['nombre' => 'Clínica El Rosal', 'color_primario' => '#0ea5e9']);
+
+    $central = User::create([
+        'tenant_id' => $this->tenant->id,
+        'nombre' => 'Lucía',
+        'email' => 'recepcion@elrosal.pe',
+        'password' => 'secreta123',
+        'rol' => 'admin',
+    ]);
+
+    $html = (new InvitacionNotification('token-de-prueba', $this->tenant, 'María Quispe'))
+        ->toMail($central)
+        ->render();
+
+    expect($html)
+        ->toContain('María Quispe')            // quién invita
+        ->toContain('Clínica El Rosal')        // desde dónde
+        ->toContain('recepcion@elrosal.pe')    // con qué usuario entra
+        ->toContain('/invitacion?')            // y el enlace
+        ->toContain('#0ea5e9')                 // con el color del negocio, no el nuestro
+        // El enlace tambien en texto: hay clientes que no pintan el boton.
+        ->toContain('Copia esta dirección');
+});
+
+/*
+ * El nombre del negocio es NULL hasta el paso 1 del onboarding. Es raro pero
+ * posible —un dueno que da de alta a alguien antes de ponerle nombre al local—
+ * y el correo no puede quedarse con un hueco.
+ */
+test('la invitación se sostiene aunque el negocio aún no tenga nombre', function () {
+    $central = User::create([
+        'tenant_id' => $this->tenant->id,
+        'nombre' => 'Lucía',
+        'email' => 'recepcion@elrosal.pe',
+        'password' => 'secreta123',
+        'rol' => 'admin',
+    ]);
+
+    $html = (new InvitacionNotification('token', $this->tenant, null))->toMail($central)->render();
+
+    expect($html)->toContain('tu negocio')
+        ->and($html)->toContain('quien te dio de alta');
+});
+
 test('una invitación inventada da 422, no un 500', function () {
     $this->withToken($this->token)->postJson('/api/usuarios', cuentaValida())->assertCreated();
 

@@ -179,7 +179,22 @@ class UsuarioService
 
         $token = Password::broker('invitaciones')->createToken($central);
 
-        $central->notify(new InvitacionNotification($token, $this->tenant()->nombre));
+        $central->notify(new InvitacionNotification(
+            $token,
+            $this->tenant(),
+            /*
+             * Quién invita. Va en el correo porque es lo que lo distingue de
+             * una estafa: recibir sin haberlo pedido un enlace para «crear una
+             * contraseña» tiene exactamente la forma del phishing, y lo único
+             * que lo desmiente es reconocer el nombre de quien te dio de alta.
+             *
+             * Sale de la sesión, no de un parámetro: invitar siempre ocurre
+             * dentro de una petición autenticada. Si algún día lo hiciera un
+             * comando, el correo se queda sin ese nombre y la plantilla lo
+             * resuelve con un texto impersonal en vez de mentir.
+             */
+            auth()->user()?->nombre,
+        ));
     }
 
     /**
