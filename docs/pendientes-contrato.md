@@ -278,6 +278,104 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 3] Locales, el pivote por sede, grupos, y el alcance por sedes
+
+Módulo 3.A cerrado por el lado backend (2026-09-05). Cuatro cosas.
+
+### 1. `/api/locales` — las sedes
+
+CRUD multipart (`POST` + `_method=PUT` al editar). Dos reglas del backend:
+
+**`es_principal` no se acepta en el payload.** El primer local que se crea nace
+como principal y ya. Si lo eligiera el formulario, un negocio podría quedarse
+sin ninguno con dos peticiones — y el principal es del que cuelga la tienda
+pública y el único que no se puede borrar. Sale resuelto en la respuesta para
+que la pantalla esconda el botón; el **422 salta igual** si se intenta.
+
+**El horario es un rango simple** (`horario_desde` / `horario_hasta`), no por
+día. Se guarda como JSON internamente para que el día que alguien quiera
+«sábado hasta la 1, domingo cerrado» quepa sin migrar N bases, pero eso no se
+nota desde fuera.
+
+Y **se valida que el cierre sea posterior a la apertura**. La ficha señala un
+local real con «21:00 – 16:07»: es un error de captura, y de ahí saldrían huecos
+imposibles cuando el Sprint 4 calcule disponibilidad. Ahora da 422.
+
+### 2. `/api/locales/{local}/profesionales` — quién atiende dónde
+
+**El listado devuelve UNA FILA POR CADA profesional del negocio**, tenga o no
+asignación en esa sede. Quien no trabaja allí vuelve con `habilitado: false` y
+el resto en null. Es lo que permite que la pantalla sea una sola tabla con
+interruptores en vez de dos listas y un botón de añadir.
+
+**No hay `store` ni `destroy`.** El `PUT` hace `syncWithoutDetaching`, así que
+el mismo endpoint asigna por primera vez y edita. Para sacar a alguien de una
+sede **se apaga `habilitado`** — borrar la fila se llevaría de paso su nombre
+público y su perfil allí, que el negocio escribió a mano y querrá recuperar si
+vuelve.
+
+**El `PUT` solo toca lo que llega**, y aquí importa más que en ningún otro
+sitio: el interruptor guarda al momento y manda una petición con ese campo casi
+solo. Si el resto se interpretara como vacío, encender a alguien le borraría lo
+que tenía escrito. Podéis mandar solo `{"habilitado": true}` sin miedo.
+
+**El `id` es el del profesional**, no el de la fila pivote (§1.4). El mismo que
+usan `/profesionales/{id}`, las citas y `servicio_profesional`. Tener dos ids
+para la misma persona según la pantalla es una fuente de errores silenciosos.
+
+⚠️ **Divergencia**: el listado filtra también por `activo`, no solo por
+`atiende` como decía la ficha. Una tabla de «quién atiende en esta sede» no
+debería ofrecer a alguien dado de baja.
+
+⚠️ **Y una que ya estaba en la ficha, por si se pierde**: el horario de esta
+fila **NO controla la disponibilidad**. El motor de reservas usa el horario del
+profesional, no el de su fila en el local. Esto es informativo para la página
+pública, y el modal debería seguir diciéndolo — si no, alguien lo configurará
+creyendo que abre o cierra huecos.
+
+### 3. `/api/grupos`
+
+CRUD con `sync()` en las tres listas (`locales`, `profesionales`, `servicios`).
+Un **array vacío desasigna** todo lo de esa categoría; una **clave ausente no
+toca nada**. `descripcion` no se emite aunque la columna exista (§2.12).
+
+La validación de pertenencia al negocio sale gratis: cada tenant tiene su base,
+así que un `exists` normal ya no puede alcanzar filas de otro. Donde el Laravel
+viejo necesitaba `exists:locales,id,negocio_id,{id}`, aquí basta `exists`.
+
+**Sigue en pie la duda de la ficha**: hoy los grupos no los consulta nadie — ni
+las citas, ni el calendario, ni la tienda pública. Es un CRUD que no alimenta
+nada. Está construido porque la pantalla y el esquema existen, pero antes de
+darles más peso conviene decidir para qué sirven: ¿filtrar la tienda? ¿agrupar
+el calendario? ¿permisos por grupo? Si no hay un uso claro, es la primera
+candidata a quitar.
+
+### 4. El alcance por sedes (esquema, sin endpoints todavía)
+
+Tabla `local_usuario` más `usuarios.todos_los_locales`. **El alcance es de la
+persona, no del rol**: dos recepcionistas con el mismo rol trabajan en sedes
+distintas, y ponerlo en el rol obligaría a crear «Recepcionista de Piura» y
+«Recepcionista de Castilla». Es como lo describe AgendaPro: *«se LE puede
+asignar permisos sobre uno o varios locales»*.
+
+El booleano no sobra: sin él, «sin sedes asignadas» significaría a la vez
+«todas» y «nadie lo ha configurado todavía», y una cuenta nueva tendría una
+puerta abierta por omisión sin que se sepa si fue decisión u olvido.
+
+Con esto quedan tres ejes ortogonales: `roles.permisos` dice **qué**,
+`roles.solo_propios` dice **sobre quién**, y esto dice **dónde**.
+
+**NO lo ofrezcáis todavía en el panel.** Hoy el backend guarda el dato y no
+filtra nada, porque no existe el middleware de capacidades — `roles.permisos`
+tampoco se aplica. Un ajuste que no filtra es peor que no tenerlo: le diría al
+negocio que su recepcionista no ve la otra sucursal cuando sí la ve. Guardar el
+dato ahora es lo que no se puede hacer después sin re-migrar; enseñarlo puede
+esperar al middleware.
+
+- **Estado**: hecho (2026-09-05). Suite: 221 tests, 1014 aserciones.
+
+---
+
 ## [Sprint 2] Los roles de sistema se renombran: `admin_general` y `admin_local`
 
 `dueno` → **`admin_general`**, `admin` → **`admin_local`**. Cambian la clave y

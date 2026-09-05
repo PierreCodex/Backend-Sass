@@ -68,7 +68,8 @@ test('el job de provisioning crea la BD, migra todas las tablas y deja al dueño
 
     $tenant->run(function () use ($dueno) {
         foreach ([
-            'roles', 'usuarios', 'profesionales', 'clientes', 'locales', 'local_profesional',
+            'roles', 'usuarios', 'profesionales', 'clientes', 'locales',
+            'local_profesional', 'local_usuario',
             'categoria_servicios', 'servicios', 'servicio_imagenes',
             'servicio_profesional', 'productos', 'citas', 'cita_servicio',
             'cita_producto', 'cita_pagos', 'grupos', 'grupo_local',
