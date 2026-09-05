@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -58,10 +59,16 @@ class UsuarioService
         return $usuario;
     }
 
-    /** @param  array<string, mixed>  $datos */
-    public function crear(array $datos): Usuario
+    /**
+     * @param  array<string, mixed>  $datos
+     * @param  string  $campo  dónde cae el 422 (`usuario.rol_id` desde profesionales)
+     */
+    public function crear(array $datos, string $campo = 'rol_id'): Usuario
     {
         $rol = Rol::findOrFail($datos['rol_id']);
+
+        $this->prohibirAdminGeneral($rol, $campo);
+
         $tenant = $this->tenant();
 
         $central = DB::connection($this->conexionCentral())->transaction(function () use ($datos, $tenant, $rol) {
@@ -102,7 +109,27 @@ class UsuarioService
             throw $e;
         }
 
-        $this->invitar($usuario, $central);
+        /*
+         * Si la invitacion falla, se deshace el alta entera.
+         *
+         * Dejar la cuenta creada parece inofensivo —existe el boton de
+         * reenviar— pero el alta responde 500, el dueño cree que no se creo, lo
+         * reintenta y se come un «correo ya registrado» sin entender por que:
+         * el email es UNICO GLOBAL y ya esta ocupado por la fila que no ve.
+         * Nos dejo seis cuentas huerfanas con el 500 de `invitacion_tokens`.
+         *
+         * Compensando, el fallo es atomico: el reintento funciona. El boton de
+         * reenviar sigue cubriendo el caso comun, que es que el correo se envie
+         * y no llegue.
+         */
+        try {
+            $this->invitar($usuario, $central);
+        } catch (Throwable $e) {
+            $this->compensarAlta($central);
+            DB::transaction(fn () => $usuario->delete());
+
+            throw $e;
+        }
 
         return $this->cargar($usuario);
     }
@@ -112,6 +139,8 @@ class UsuarioService
     {
         $central = User::findOrFail($usuario->central_user_id);
         $rol = Rol::findOrFail($datos['rol_id']);
+
+        $this->protegerAlAdminGeneral($usuario, $rol);
 
         $antes = $central->getOriginal();
 
@@ -195,6 +224,55 @@ class UsuarioService
              */
             auth()->user()?->nombre,
         ));
+    }
+
+    /**
+     * El rol de administrador general no se reparte NUNCA por esta vía.
+     *
+     * Hay exactamente uno por negocio y lo crea el registro; ningún otro flujo
+     * debe poder fabricar un segundo. Vive aquí y no en el controlador porque
+     * es un invariante del service, no la regla de un endpoint — y eso importa:
+     * el candado estaba solo en `UsuarioController` y
+     * `ProfesionalService::cuentaSiSePide()` entraba por debajo, asi que un
+     * administrador local podia darse de alta como profesional con el `rol_id`
+     * del general y quedarse con facturacion y con la capacidad de repartir
+     * roles. Dos peticiones. Y la cuenta resultante no se podia borrar, porque
+     * `destroy` se niega sobre el general.
+     *
+     * Puesto aqui, el dia que aparezca un tercer camino —una importacion, un
+     * comando— ya esta cubierto.
+     */
+    private function prohibirAdminGeneral(Rol $rol, string $campo): void
+    {
+        if ($rol->esAdminGeneral()) {
+            throw ValidationException::withMessages([
+                $campo => 'Ya hay un administrador general en este negocio.',
+            ]);
+        }
+    }
+
+    /**
+     * Ni se le quita a quien lo tiene, ni se le da a quien no.
+     *
+     * Quitárselo lo deja sin acceso a su propia facturación; dárselo a otro
+     * fabrica un segundo superusuario. Cambiar de titular es una operación de
+     * soporte, no un select del formulario.
+     */
+    private function protegerAlAdminGeneral(Usuario $usuario, Rol $nuevo): void
+    {
+        $esGeneral = (bool) $usuario->rol?->esAdminGeneral();
+
+        if ($esGeneral && ! $nuevo->esAdminGeneral()) {
+            throw ValidationException::withMessages([
+                'rol_id' => 'El administrador general no puede cambiar de rol.',
+            ]);
+        }
+
+        if (! $esGeneral && $nuevo->esAdminGeneral()) {
+            throw ValidationException::withMessages([
+                'rol_id' => 'Ya hay un administrador general en este negocio.',
+            ]);
+        }
     }
 
     /**

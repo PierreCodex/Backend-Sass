@@ -179,6 +179,37 @@ test('un rol inventado por el negocio funciona igual que uno de sistema', functi
 });
 
 /*
+ * El escenario completo de la escalada, con el rol que de verdad la permitia.
+ *
+ * El administrador local tiene `empleados: gestionar`, asi que llega a
+ * `/profesionales` legitimamente. Lo que no puede es usar ese camino para
+ * fabricarse un segundo administrador general — que es lo que la propia
+ * documentacion nombra al explicar por que roles y cuentas son solo del
+ * general: «quien puede crear cuentas y repartir roles puede fabricarse un
+ * segundo dueño».
+ */
+test('un administrador local no puede ascenderse por la puerta de profesionales', function () {
+    $token = cuentaCon('admin_local');
+
+    $rolGeneral = $this->tenant->run(fn () => Rol::where('clave', 'admin_general')->value('id'));
+
+    // Llega al endpoint: tiene el permiso. Lo que se le niega es el rol.
+    comoOtro($this, $token)->post('/api/profesionales', [
+        'nombre' => 'Yo mismo',
+        'tipo_pago' => 'comision',
+        'comision_porcentaje' => 10,
+        'usuario' => ['email' => 'ascendido@elrosal.pe', 'rol_id' => $rolGeneral],
+    ], ['Accept' => 'application/json'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('usuario.rol_id');
+
+    // Y sigue habiendo exactamente un administrador general.
+    $this->tenant->run(function () use ($rolGeneral) {
+        expect(Usuario::where('rol_id', $rolGeneral)->count())->toBe(1);
+    });
+});
+
+/*
 |--------------------------------------------------------------------------
 | El alcance por sedes
 |--------------------------------------------------------------------------

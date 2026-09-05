@@ -10,6 +10,7 @@ use App\Notifications\InvitacionNotification;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
     $this->seed(PlanSeeder::class);
@@ -179,6 +180,28 @@ test('la invitación se puede reenviar', function () {
     $central = User::where('email', 'recepcion@elrosal.pe')->firstOrFail();
 
     Notification::assertSentToTimes($central, InvitacionNotification::class, 2);
+});
+
+/*
+ * Si la invitación revienta, el alta se deshace entera.
+ *
+ * Dejar la cuenta creada parecía inofensivo —existe el botón de reenviar— pero
+ * el alta responde 500, el dueño cree que no se creó, lo reintenta y se come un
+ * «correo ya registrado» sin entender por qué: el email es único GLOBAL y ya
+ * está ocupado por una fila que no ve. Al frontend le dejó seis cuentas
+ * huérfanas cuando faltaba la tabla `invitacion_tokens`.
+ */
+test('si falla el envío de la invitación no queda una cuenta a medias', function () {
+    // Se rompe a propósito lo que la invitación necesita.
+    Schema::drop('invitacion_tokens');
+
+    $this->withToken($this->token)->postJson('/api/usuarios', cuentaValida())
+        ->assertStatus(500);
+
+    expect(User::where('email', 'recepcion@elrosal.pe')->withTrashed()->count())->toBe(0);
+
+    // Y en el negocio sigue estando solo el titular.
+    $this->tenant->run(fn () => expect(Usuario::count())->toBe(1));
 });
 
 test('el email ya usado en OTRO negocio da 422 y no deja fila huérfana', function () {

@@ -139,6 +139,36 @@ test('el email ya usado en OTRO negocio da 422 y no deja ficha a medias', functi
     });
 });
 
+/*
+ * La escalada que reporto el frontend el 2026-09-05.
+ *
+ * El candado de «un solo administrador general» vivia SOLO en
+ * `UsuarioController`, y este camino entra por debajo: `/profesionales` acepta
+ * el objeto `usuario` y llama derecho a `UsuarioService::crear()`. Como
+ * `/profesionales` esta detras de `puede:empleados,gestionar` —que el
+ * administrador LOCAL tiene— cualquiera de ellos podia darse de alta con el
+ * `rol_id` del general y quedarse con facturacion y con la capacidad de
+ * repartir roles. Y la cuenta resultante no se podia borrar, porque `destroy`
+ * se niega sobre el general.
+ *
+ * Ahora el candado esta en el service, que es por donde pasan los dos caminos.
+ */
+test('no se puede fabricar un segundo administrador general desde profesionales', function () {
+    enviarProfesional($this, profesionalValido([
+        'usuario' => ['email' => 'colado@elrosal.pe', 'rol_id' => rolDe('admin_general')],
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('usuario.rol_id');
+
+    // Ni cuenta central, ni fila en el negocio, ni ficha de profesional.
+    expect(User::where('email', 'colado@elrosal.pe')->withTrashed()->count())->toBe(0);
+
+    $this->tenant->run(function () {
+        expect(Usuario::count())->toBe(1)
+            ->and(Profesional::where('nombre', 'Dra. Carmen Ríos')->count())->toBe(0);
+    });
+});
+
 test('a quien ya tiene cuenta se le puede dar acceso al editar', function () {
     $id = enviarProfesional($this, profesionalValido())->assertCreated()->json('data.id');
 

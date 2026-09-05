@@ -179,7 +179,7 @@ class ProfesionalService
             'email' => $cuenta['email'],
             'telefono' => $datos['telefono'] ?? null,
             'rol_id' => $cuenta['rol_id'],
-        ]);
+        ], 'usuario.rol_id');
     }
 
     /**
