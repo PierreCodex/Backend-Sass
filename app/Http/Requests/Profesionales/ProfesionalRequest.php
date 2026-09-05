@@ -263,9 +263,17 @@ class ProfesionalRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.unique' => 'Ya existe una cuenta con ese correo.',
+            /*
+             * La clave lleva el atributo COMPLETO. El campo es `usuario.email`
+             * —anidado desde que la cuenta es opcional— y con `email.unique` a
+             * secas Laravel no encuentra el mensaje y cae al suyo, en ingles:
+             * «The usuario.email has already been taken.»
+             */
+            'usuario.email.unique' => 'Ya existe una cuenta con ese correo.',
+            'usuario.email.required_with' => 'Para darle acceso al panel hace falta su correo.',
+            'usuario.rol_id.required_with' => 'Elige qué podrá hacer en el panel.',
+
             'telefono.regex' => 'El teléfono debe tener el formato +51 seguido de 9 dígitos.',
-            'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
             'foto.max' => 'La foto no debe superar los 2 MB.',
             'foto.image' => 'El archivo debe ser una imagen.',
         ];

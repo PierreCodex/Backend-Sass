@@ -117,9 +117,21 @@ test('el email ya usado en OTRO negocio da 422 y no deja ficha a medias', functi
         'rol' => 'profesional',
     ]);
 
-    enviarProfesional($this, profesionalValido([
+    $errores = enviarProfesional($this, profesionalValido([
         'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => rolDe('profesional')],
-    ]))->assertStatus(422)->assertJsonValidationErrors(['usuario.email']);
+    ]))->assertStatus(422)
+        ->assertJsonValidationErrors(['usuario.email'])
+        ->json('errors');
+
+    /*
+     * Y en castellano. La clave del mensaje lleva el atributo COMPLETO
+     * (`usuario.email.unique`): con `email.unique` a secas Laravel no lo
+     * encuentra y cae al suyo, en ingles.
+     *
+     * Se lee del array y no con `assertJsonPath`, que interpreta el punto de
+     * `usuario.email` como un nivel mas de anidamiento.
+     */
+    expect($errores['usuario.email'][0])->toBe('Ya existe una cuenta con ese correo.');
 
     // El alta se para ANTES de tocar la base del negocio.
     $this->tenant->run(function () {
