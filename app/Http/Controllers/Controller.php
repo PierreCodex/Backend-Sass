@@ -49,6 +49,35 @@ abstract class Controller
         }
     }
 
+    /**
+     * Las sedes que alcanza quien pide, o `null` si son todas.
+     *
+     * Sale del middleware `puede`, que ya la resolvio: repetir la consulta aqui
+     * seria pedirle a la base lo mismo dos veces por peticion.
+     *
+     * @return list<int>|null
+     */
+    protected function alcanceDeSedes(Request $request): ?array
+    {
+        return $request->attributes->get('capacidades')?->locales();
+    }
+
+    /**
+     * 404 si la sede queda fuera de su alcance.
+     *
+     * 404 y no 403 a proposito: para esa persona ese local no existe, igual que
+     * no existe el de otro negocio. Un 403 confirmaria que la sede esta ahi,
+     * que es justo lo que el alcance viene a ocultar.
+     */
+    protected function exigirAlcance(Request $request, int $localId): void
+    {
+        $alcance = $this->alcanceDeSedes($request);
+
+        if ($alcance !== null && ! in_array($localId, $alcance, true)) {
+            abort(404);
+        }
+    }
+
     protected function porPagina(Request $request): int
     {
         $pedido = $request->integer('per_page', self::POR_PAGINA);

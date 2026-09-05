@@ -110,6 +110,13 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 
   **`atiende` significa UNA sola cosa**: si aparece en la tienda pública. No
   decide el cupo ni si alguien es staff.
+- **Los permisos se aplican con el middleware `puede:modulo,nivel`** (desde el
+  2026-09-05). Se pregunta por CAPACIDAD y nunca por rol: es lo que deja que el
+  negocio invente sus propios roles sin tocar un endpoint. `gestionar` incluye
+  `ver`; falla cerrado; 403 con `codigo: sin_permiso`, y la pared de cobro
+  (`suscripcion_vencida`) gana cuando concurren. `GET /capacidades` devuelve la
+  matriz ya resuelta para que el panel arme su menú — pero esconder una opción
+  NO es autorización, el backend responde 403 igual
 - **`tenants.id` y `tenants.slug` son cosas DISTINTAS** (cerrado en el
   contrato, Sprint 0):
   - `id`: inmutable, aleatorio, nace en el registro, nombra la BD

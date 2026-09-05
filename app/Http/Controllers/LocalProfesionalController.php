@@ -8,6 +8,7 @@ use App\Http\Requests\Locales\LocalProfesionalRequest;
 use App\Http\Resources\LocalProfesionalResource;
 use App\Models\Local;
 use App\Models\Profesional;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -27,8 +28,10 @@ class LocalProfesionalController extends Controller
      * vez de dos listas y un botón de añadir. Quien no trabaja aquí vuelve con
      * `habilitado: false` y el resto en null.
      */
-    public function index(Local $local): AnonymousResourceCollection
+    public function index(Request $request, Local $local): AnonymousResourceCollection
     {
+        $this->exigirAlcance($request, $local->id);
+
         $profesionales = Profesional::query()
             /*
              * `atiende` lo pide la ficha; `activo` lo añado porque una tabla de
@@ -58,6 +61,8 @@ class LocalProfesionalController extends Controller
         Local $local,
         Profesional $profesional,
     ): LocalProfesionalResource {
+        $this->exigirAlcance($request, $local->id);
+
         $local->profesionales()->syncWithoutDetaching([
             $profesional->id => $this->fila($request->validated()),
         ]);

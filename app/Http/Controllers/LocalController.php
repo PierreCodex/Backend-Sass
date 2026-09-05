@@ -19,6 +19,13 @@ class LocalController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $locales = Local::query()
+            /*
+             * Solo sus sedes. Un administrador local ve las suyas y punto — es
+             * la primera vez que el alcance hace algo de verdad, y por eso vive
+             * aqui y no en la pantalla: el panel puede esconder lo que quiera,
+             * pero quien decide es esto.
+             */
+            ->when($this->alcanceDeSedes($request), fn ($q, array $ids) => $q->whereIn('id', $ids))
             ->when($request->string('search')->trim()->value(), function ($q, string $search) {
                 $q->where(function ($q) use ($search) {
                     $q->where('nombre', 'like', "%{$search}%")
@@ -33,8 +40,10 @@ class LocalController extends Controller
         return LocalResource::collection($locales);
     }
 
-    public function show(Local $local): LocalResource
+    public function show(Request $request, Local $local): LocalResource
     {
+        $this->exigirAlcance($request, $local->id);
+
         return LocalResource::make($local);
     }
 
