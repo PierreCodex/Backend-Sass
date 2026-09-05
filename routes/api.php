@@ -12,6 +12,7 @@ use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
+use App\Http\Controllers\LocalController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\ProfesionalController;
@@ -124,6 +125,11 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
                 // Sin esto el parametro seria `{role}` (Str::singular en ingles)
                 // y el binding no casaria con `Rol $rol` del controlador.
                 ->parameters(['roles' => 'rol']);
+
+            // Las sedes del negocio. El principal lo decide el backend y no
+            // se borra.
+            Route::apiResource('locales', LocalController::class)
+                ->parameters(['locales' => 'local']);
 
             /*
              * Quien ENTRA al panel. Distinto de los profesionales: una

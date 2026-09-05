@@ -76,11 +76,20 @@ test('un tenant provisionado ANTES de la separación se migra sin perder datos',
             'nombre' => 'María Quispe',
         ]);
 
+        /*
+         * `local_usuario` cuelga de `usuarios` con foreign key, asi que hay que
+         * tirarla primero. Este rebobinado modela un estado historico, y por
+         * eso hay que mantenerlo cada vez que llega una migracion que toque
+         * estas tablas — es el precio de tener un test que prueba de verdad la
+         * ruta de actualizacion y no solo la instalacion limpia.
+         */
+        Schema::dropIfExists('local_usuario');
         Schema::dropIfExists('usuarios');
 
-        DB::table('migrations')
-            ->where('migration', '2026_09_04_000001_separar_usuarios_de_profesionales')
-            ->delete();
+        DB::table('migrations')->whereIn('migration', [
+            '2026_09_04_000001_separar_usuarios_de_profesionales',
+            '2026_09_04_000003_alcance_por_sedes',
+        ])->delete();
     });
 
     $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
@@ -103,6 +112,10 @@ test('un tenant provisionado ANTES de la separación se migra sin perder datos',
         // Y las columnas viejas se fueron.
         expect(Schema::hasColumn('profesionales', 'central_user_id'))->toBeFalse()
             ->and(Schema::hasColumn('profesionales', 'rol_id'))->toBeFalse();
+
+        // Las dos migraciones entraron, no solo la primera.
+        expect(Schema::hasTable('local_usuario'))->toBeTrue()
+            ->and(Schema::hasColumn('usuarios', 'todos_los_locales'))->toBeTrue();
     });
 });
 

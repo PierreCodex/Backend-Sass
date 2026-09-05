@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
@@ -25,7 +26,9 @@ class Usuario extends Model
 {
     protected $table = 'usuarios';
 
-    protected $fillable = ['central_user_id', 'rol_id'];
+    protected $fillable = ['central_user_id', 'rol_id', 'todos_los_locales'];
+
+    protected $casts = ['todos_los_locales' => 'boolean'];
 
     /**
      * La cuenta central de esta persona.
@@ -39,6 +42,18 @@ class Usuario extends Model
     public function rol(): BelongsTo
     {
         return $this->belongsTo(Rol::class);
+    }
+
+    /**
+     * Las sedes que ve esta cuenta. Vacia + `todos_los_locales` en true = todas.
+     *
+     * El alcance es de la PERSONA y no del rol: dos recepcionistas con el mismo
+     * rol trabajan en sedes distintas, y ponerlo en el rol obligaria a crear un
+     * rol por sucursal.
+     */
+    public function locales(): BelongsToMany
+    {
+        return $this->belongsToMany(Local::class, 'local_usuario')->withTimestamps();
     }
 
     /** Su ficha de profesional, si además presta servicios. */
