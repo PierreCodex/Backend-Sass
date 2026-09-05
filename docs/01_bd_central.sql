@@ -378,7 +378,7 @@ CREATE TABLE `users` (
   `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `email_verified_at` timestamp NULL DEFAULT NULL,
   `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `rol` enum('dueno','admin','profesional') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'profesional',
+  `rol` enum('admin_general','admin_local','profesional') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'profesional',
   `foto` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `telefono` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `documento` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,

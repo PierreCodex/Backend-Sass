@@ -208,7 +208,7 @@ class UsuarioService
      */
     private function rolCentral(Rol $rol): string
     {
-        return $rol->clave === 'admin' ? 'admin' : 'profesional';
+        return $rol->clave === 'admin_local' ? 'admin_local' : 'profesional';
     }
 
     private function tenant(): Tenant

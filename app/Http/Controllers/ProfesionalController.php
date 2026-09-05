@@ -17,7 +17,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 /**
  * Quien presta los servicios. Ya no exige cuenta ni rol: eso es `/usuarios`.
  *
- * Tampoco exige ser dueño para gestionarlo, al reves que roles y cuentas — dar
+ * Tampoco exige ser administrador general para gestionarlo, al reves que roles y cuentas — dar
  * de alta a un barbero no reparte poder sobre el sistema, y el preset de
  * Administrador trae `empleados: gestionar` justo para esto.
  */

@@ -53,7 +53,7 @@ test('un tenant provisionado ANTES de la separación se migra sin perder datos',
     $dueno = crearDueno($tenant);
     (new ProvisionTenantDatabase($tenant))->handle();
 
-    $rolDueno = $tenant->run(fn () => DB::table('roles')->where('clave', 'dueno')->value('id'));
+    $rolDueno = $tenant->run(fn () => DB::table('roles')->where('clave', 'admin_general')->value('id'));
 
     // Rebobinar al esquema viejo, con su fila de profesional como la tenía.
     $tenant->run(function () use ($dueno, $rolDueno) {
@@ -103,6 +103,61 @@ test('un tenant provisionado ANTES de la separación se migra sin perder datos',
         // Y las columnas viejas se fueron.
         expect(Schema::hasColumn('profesionales', 'central_user_id'))->toBeFalse()
             ->and(Schema::hasColumn('profesionales', 'rol_id'))->toBeFalse();
+    });
+});
+
+/*
+ * El renombrado de claves, sobre un negocio que ya estaba en marcha.
+ *
+ * `dueno` → `admin_general` y `admin` → `admin_local`. Lo que hay que
+ * comprobar no es que las claves cambien —eso es un UPDATE— sino que la gente
+ * conserve su rol: las cuentas apuntan a `roles.id`, no a la clave, así que
+ * renombrarla no puede dejar a nadie sin permisos.
+ *
+ * Y que el `nombre` visible SOLO se toque en los roles que el negocio no
+ * personalizó: quien renombró el suyo no debe encontrárselo cambiado.
+ */
+test('renombrar las claves de rol conserva a la gente y respeta lo personalizado', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    $dueno = crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    // Rebobinar a las claves viejas, con un rol de sistema ya personalizado.
+    $idsAntes = $tenant->run(function () {
+        DB::table('roles')->where('clave', 'admin_general')->update(['clave' => 'dueno', 'nombre' => 'Dueño']);
+        DB::table('roles')->where('clave', 'admin_local')->update([
+            'clave' => 'admin',
+            'nombre' => 'La encargada',   // el negocio lo renombró
+            'editado_at' => now(),
+        ]);
+
+        DB::table('migrations')
+            ->where('migration', '2026_09_04_000002_renombrar_claves_de_roles')
+            ->delete();
+
+        return DB::table('roles')->pluck('id', 'clave')->all();
+    });
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $tenant->run(function () use ($dueno, $idsAntes) {
+        $roles = DB::table('roles')->get()->keyBy('clave');
+
+        // Las claves nuevas, sobre las MISMAS filas: los ids no se mueven.
+        expect($roles->keys()->sort()->values()->all())
+            ->toBe(['admin_general', 'admin_local', 'profesional'])
+            ->and($roles['admin_general']->id)->toBe($idsAntes['dueno'])
+            ->and($roles['admin_local']->id)->toBe($idsAntes['admin']);
+
+        // Y su gente sigue con el rol que tenía.
+        $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
+        expect($cuenta->rol_id)->toBe((int) $roles['admin_general']->id);
+
+        // El nombre se actualiza en el que nadie tocó...
+        expect($roles['admin_general']->nombre)->toBe('Administrador general');
+
+        // ...y se respeta en el que el negocio personalizó.
+        expect($roles['admin_local']->nombre)->toBe('La encargada');
     });
 });
 

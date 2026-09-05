@@ -30,7 +30,7 @@ test('el registro crea tenant y dueño atómicamente, sin sesión y sin BD de te
 
     $respuesta->assertStatus(201)
         ->assertJsonPath('data.name', 'María Quispe')
-        ->assertJsonPath('data.rol', 'dueno')
+        ->assertJsonPath('data.rol', 'admin_general')
         ->assertJsonMissingPath('data.token');
 
     $user = User::where('email', 'maria@correo.pe')->firstOrFail();

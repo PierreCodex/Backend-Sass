@@ -44,7 +44,7 @@ class RegistroController extends Controller
                 'email' => $datos['email'],
                 'telefono' => $datos['telefono'],
                 'password' => $datos['password'],
-                'rol' => 'dueno',
+                'rol' => 'admin_general',
             ]);
         });
 

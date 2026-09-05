@@ -278,6 +278,68 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 2] Los roles de sistema se renombran: `admin_general` y `admin_local`
+
+`dueno` → **`admin_general`**, `admin` → **`admin_local`**. Cambian la clave y
+el nombre visible, en las dos bases.
+
+### Por qué
+
+«Administrador general» y «Administrador» se diferenciaban en **una fila útil**
+—facturación— más dos cosméticas. Eso no es un rol distinto: es el mismo con un
+permiso menos. Lo que de verdad los separa, y es como lo tiene AgendaPro, es el
+**alcance**: uno manda en la empresa, el otro en su sede.
+
+Al cambiar el concepto, la clave vieja dejó de describirlo. Y `dueno` tenía otro
+problema: quien registra la cuenta no siempre es el propietario —en una clínica
+o un salón con socios suele ser la administradora— así que decirle «Dueño» en su
+panel era, además, falso.
+
+Esta vez **sí se renombra la clave**, al revés de lo que hicimos con el nombre
+visible hace unos días. La diferencia: entonces cambiaba la etiqueta y la clave
+existe justo para sobrevivir a eso; ahora cambió el concepto.
+
+### Lo que cambia de cara al cliente
+
+- **`usuario.rol`** (en `/login` y `GET /user`) emite ahora
+  `admin_general | admin_local | profesional`. **Hay que actualizar el union del
+  tipo `Usuario`** en el contrato.
+- **`roles[].clave`** emite lo mismo. Si el panel decide algo mirando la clave
+  —esconder Facturación, deshabilitar el borrado— hay que cambiar esas
+  comparaciones.
+- Los **nombres visibles** pasan a «Administrador general» y «Administrador
+  local», salvo en los negocios que los hayan renombrado: a esos no se les
+  toca (`editado_at`).
+- Los **textos de los 422** dejan de decir «dueño»: «Ya hay un administrador
+  general en este negocio», «Al administrador general no se le puede quitar el
+  acceso», «El administrador general no puede cambiar de rol».
+
+### El administrador local pierde Configuración
+
+Su preset pasa a tener `configuracion: null`. Ahí viven el nombre del negocio,
+el slug, la marca y el horario base — cosas de la empresa, no de un local. Es lo
+mismo que dice la guía de AgendaPro: *«NO puede acceder a la tuerca/engranaje de
+configuraciones ni agregar usuarios»*. Cuentas y roles ya eran del general.
+
+**El hueco que esto podría dejar tiene respuesta**: el socio que necesita todo
+menos facturación, en todas las sedes, no se queda fuera — el administrador
+general se crea un rol propio con los catorce módulos menos ese. En AgendaPro
+hay que pedirle un segundo Administrador general a soporte; aquí no.
+
+### Cómo entra en lo que ya existe
+
+Dos migraciones que van **hacia adelante**, sin tocar las que ya corrieron: una
+central que amplía el ENUM de `users.rol`, traduce las filas y lo recorta; y una
+de tenant que renombra las claves de `roles`.
+
+Lo que garantiza el test: las claves cambian **sobre las mismas filas**, así que
+las cuentas —que apuntan a `roles.id`, no a la clave— conservan su rol; y el
+`nombre` visible solo se actualiza en los roles que el negocio no personalizó.
+
+- **Estado**: hecho (2026-09-04). Suite: 189 tests, 881 aserciones.
+
+---
+
 ## [Sprint 2] Usuarios y Profesionales se separan: `/empleados` deja de existir
 
 Es el cambio más grande hecho hasta ahora y **rehace el módulo 2.A**. Llega

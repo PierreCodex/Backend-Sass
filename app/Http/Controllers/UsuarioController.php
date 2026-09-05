@@ -19,9 +19,9 @@ use Illuminate\Validation\ValidationException;
  * Quién entra al panel. Distinto de `/profesionales`, que es quién presta los
  * servicios: una recepcionista vive aquí y no allí.
  *
- * Gestionar cuentas es solo del dueño, igual que los roles y por el mismo
+ * Gestionar cuentas es solo del administrador general, igual que los roles y por el mismo
  * motivo — quien puede crear cuentas y repartir roles puede fabricarse un
- * segundo dueño.
+ * segundo administrador general.
  */
 class UsuarioController extends Controller
 {
@@ -29,7 +29,7 @@ class UsuarioController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         $usuarios = Usuario::query()
             ->with(['rol', 'profesional'])
@@ -54,20 +54,20 @@ class UsuarioController extends Controller
 
     public function show(Request $request, Usuario $usuario): CuentaResource
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         return CuentaResource::make($this->service->cargar($usuario));
     }
 
     public function store(UsuarioRequest $request): JsonResponse
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
-        // Hay exactamente un dueño por negocio y lo crea el registro. Darle ese
+        // Hay exactamente un administrador general por negocio y lo crea el registro. Darle ese
         // rol a un alta nueva fabricaría un segundo superusuario.
-        if (Rol::find($request->validated('rol_id'))?->esDueno()) {
+        if (Rol::find($request->validated('rol_id'))?->esAdminGeneral()) {
             throw ValidationException::withMessages([
-                'rol_id' => 'Ya hay un dueño en este negocio.',
+                'rol_id' => 'Ya hay un administrador general en este negocio.',
             ]);
         }
 
@@ -78,24 +78,24 @@ class UsuarioController extends Controller
 
     public function update(UsuarioRequest $request, Usuario $usuario): CuentaResource
     {
-        $this->soloElDueno($request);
-        $this->protegerAlDueno($usuario, (int) $request->validated('rol_id'));
+        $this->soloElAdminGeneral($request);
+        $this->protegerAlAdminGeneral($usuario, (int) $request->validated('rol_id'));
 
         return CuentaResource::make($this->service->actualizar($usuario, $request->validated()));
     }
 
     public function destroy(Request $request, Usuario $usuario): JsonResponse
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         /*
-         * Dos barandillas. La primera: la cuenta del dueño no se borra. Es la
+         * Dos barandillas. La primera: la cuenta del administrador general no se borra. Es la
          * que lleva facturación y la creó el registro; borrarla deja al negocio
          * sin nadie que pueda pagar y solo se arregla entrando a la base.
          */
-        if ($usuario->rol?->esDueno()) {
+        if ($usuario->rol?->esAdminGeneral()) {
             throw ValidationException::withMessages([
-                'usuario' => 'Al dueño del negocio no se le puede quitar el acceso.',
+                'usuario' => 'Al administrador general no se le puede quitar el acceso.',
             ]);
         }
 
@@ -122,7 +122,7 @@ class UsuarioController extends Controller
      */
     public function invitar(Request $request, Usuario $usuario): JsonResponse
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         $this->service->invitar($usuario);
 
@@ -130,26 +130,26 @@ class UsuarioController extends Controller
     }
 
     /**
-     * El rol `dueno` no se reparte ni se quita.
+     * El rol de administrador general no se reparte ni se quita.
      *
      * Hay exactamente uno por negocio: quitárselo lo deja sin acceso a
      * facturación, y dárselo a otro fabrica un segundo superusuario. Cambiar de
-     * dueño es una operación de soporte, no un select del formulario.
+     * de titular es una operación de soporte, no un select del formulario.
      */
-    private function protegerAlDueno(Usuario $usuario, int $rolNuevo): void
+    private function protegerAlAdminGeneral(Usuario $usuario, int $rolNuevo): void
     {
-        $esDueno = (bool) $usuario->rol?->esDueno();
-        $seraDueno = (bool) Rol::find($rolNuevo)?->esDueno();
+        $esDueno = (bool) $usuario->rol?->esAdminGeneral();
+        $seraDueno = (bool) Rol::find($rolNuevo)?->esAdminGeneral();
 
         if ($esDueno && ! $seraDueno) {
             throw ValidationException::withMessages([
-                'rol_id' => 'El dueño del negocio no puede cambiar de rol.',
+                'rol_id' => 'El administrador general no puede cambiar de rol.',
             ]);
         }
 
         if (! $esDueno && $seraDueno) {
             throw ValidationException::withMessages([
-                'rol_id' => 'Ya hay un dueño en este negocio.',
+                'rol_id' => 'Ya hay un administrador general en este negocio.',
             ]);
         }
     }

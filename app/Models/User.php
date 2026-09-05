@@ -23,7 +23,7 @@ class User extends Authenticatable
 {
     use CentralConnection, HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
-    public const ROLES = ['dueno', 'admin', 'profesional'];
+    public const ROLES = ['admin_general', 'admin_local', 'profesional'];
 
     protected $fillable = [
         'tenant_id',

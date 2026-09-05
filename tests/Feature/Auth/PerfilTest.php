@@ -74,13 +74,13 @@ test('PUT /user NO deja cambiar email ni rol aunque viajen en el payload', funct
     $this->withToken($this->token)
         ->putJson('/api/user', perfilValido([
             'email' => 'otra@correo.pe',
-            'rol' => 'admin',
+            'rol' => 'admin_local',
         ]))
         ->assertOk();
 
     $this->user->refresh();
     expect($this->user->email)->toBe('maria@correo.pe');
-    expect($this->user->rol)->toBe('dueno');
+    expect($this->user->rol)->toBe('admin_general');
 });
 
 test('PUT /user valida: nombre vacío y teléfono mal formado → 422 por campo', function () {

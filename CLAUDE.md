@@ -168,6 +168,13 @@ desechable (nunca la de desarrollo), provisionar un tenant, volcar con
 - BD tenant: **NO existe negocio_id** en ninguna tabla (la base ES el negocio)
 - `users` vive en la BD CENTRAL con `tenant_id NOT NULL`. Superadmin/soporte
   van en `platform_admins` (guard propio) — nunca users con tenant NULL
+- **Los tres roles de sistema son `admin_general`, `admin_local` y
+  `profesional`** (renombrados el 2026-09-04; antes `dueno` y `admin`). El
+  general y el local no se distinguían por permisos —una fila, facturación— y
+  eso no es un rol distinto: lo que los separa es el **alcance**, uno manda en
+  la empresa y el otro en su sede. Por eso el local tampoco toca Configuración,
+  que es de la empresa y no de un local. El alcance por sedes en sí llega con
+  Locales (Sprint 3)
 - **`users.email` es UNIQUE GLOBAL** (no compuesto). La columna
   **`users.usuario` se ELIMINA**: con email único global no aporta, y su
   unique compuesto cae con ella

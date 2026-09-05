@@ -40,13 +40,13 @@ function rolValido(array $extra = []): array
 |--------------------------------------------------------------------------
 */
 
-test('el listado trae los tres roles de sistema, el dueño primero', function () {
+test('el listado trae los tres roles de sistema, el general primero', function () {
     $respuesta = $this->withToken($this->token)->getJson('/api/roles');
 
     $respuesta->assertOk()
         ->assertJsonCount(3, 'data')
-        ->assertJsonPath('data.0.clave', 'dueno')
-        ->assertJsonPath('data.1.clave', 'admin')
+        ->assertJsonPath('data.0.clave', 'admin_general')
+        ->assertJsonPath('data.1.clave', 'admin_local')
         ->assertJsonPath('data.2.clave', 'profesional');
 });
 
@@ -74,7 +74,7 @@ test('cada rol emite los 14 módulos aunque su JSON guarde menos', function () {
 test('el listado dice cuántas cuentas usan cada rol', function () {
     $respuesta = $this->withToken($this->token)->getJson('/api/roles');
 
-    $dueno = collect($respuesta->json('data'))->firstWhere('clave', 'dueno');
+    $dueno = collect($respuesta->json('data'))->firstWhere('clave', 'admin_general');
 
     // Cuenta CUENTAS, no fichas de profesional: un barbero sin acceso al panel
     // no lleva rol. El provisioning le crea la suya al dueño.
@@ -85,8 +85,8 @@ test('las barandillas viajan resueltas, no las deduce el cliente', function () {
     $roles = collect($this->withToken($this->token)->getJson('/api/roles')->json('data'))
         ->keyBy('clave');
 
-    expect($roles['dueno'])->toMatchArray(['editable' => false, 'borrable' => false, 'duplicable' => false])
-        ->and($roles['admin'])->toMatchArray(['editable' => true, 'borrable' => false, 'duplicable' => true]);
+    expect($roles['admin_general'])->toMatchArray(['editable' => false, 'borrable' => false, 'duplicable' => false])
+        ->and($roles['admin_local'])->toMatchArray(['editable' => true, 'borrable' => false, 'duplicable' => true]);
 });
 
 /*
@@ -95,7 +95,7 @@ test('las barandillas viajan resueltas, no las deduce el cliente', function () {
 |--------------------------------------------------------------------------
 */
 
-test('el dueño crea un rol propio', function () {
+test('el administrador general crea un rol propio', function () {
     $respuesta = $this->withToken($this->token)->postJson('/api/roles', rolValido());
 
     $respuesta->assertCreated()
@@ -119,7 +119,7 @@ test('los módulos sin permiso NO se guardan en el JSON, solo se emiten', functi
 
 test('clave y sistema se ignoran aunque se manden a mano', function () {
     $this->withToken($this->token)
-        ->postJson('/api/roles', rolValido(['clave' => 'dueno', 'sistema' => true]))
+        ->postJson('/api/roles', rolValido(['clave' => 'admin_general', 'sistema' => true]))
         ->assertCreated()
         ->assertJsonPath('data.clave', null)
         ->assertJsonPath('data.sistema', false);
@@ -178,8 +178,8 @@ test('permisos que no es un array da 422, no un error de servidor', function () 
 |--------------------------------------------------------------------------
 */
 
-test('el rol del dueño no se puede editar', function () {
-    $id = $this->tenant->run(fn () => Rol::where('clave', 'dueno')->value('id'));
+test('el rol de administrador general no se puede editar', function () {
+    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin_general')->value('id'));
 
     $this->withToken($this->token)
         ->putJson("/api/roles/{$id}", rolValido(['nombre' => 'Jefazo']))
@@ -188,7 +188,7 @@ test('el rol del dueño no se puede editar', function () {
 });
 
 test('el rol de administrador sí se edita, y queda marcado como tocado', function () {
-    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin')->value('id'));
+    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin_local')->value('id'));
 
     $this->withToken($this->token)
         ->putJson("/api/roles/{$id}", rolValido([
@@ -199,7 +199,7 @@ test('el rol de administrador sí se edita, y queda marcado como tocado', functi
         ->assertJsonPath('data.nombre', 'Encargada')
         // La clave sobrevive al cambio de nombre: es lo que deja al backend
         // seguir reconociéndolo.
-        ->assertJsonPath('data.clave', 'admin');
+        ->assertJsonPath('data.clave', 'admin_local');
 
     $rol = $this->tenant->run(fn () => Rol::find($id));
 
@@ -251,19 +251,19 @@ test('un rol que no usa nadie se borra', function () {
  * usar. Dar de alta gente y decidir qué puede hacer la gente son permisos
  * distintos; consultar la lista no es ninguno de los dos.
  */
-test('quien no es dueño lee los roles, pero no los toca', function () {
+test('quien no es administrador general lee los roles, pero no los toca', function () {
     $admin = User::create([
         'tenant_id' => $this->tenant->id,
         'nombre' => 'Lucía',
         'email' => 'lucia@elrosal.pe',
         'password' => 'secreta123',
-        'rol' => 'admin',
+        'rol' => 'admin_local',
     ]);
     $token = $admin->createToken('test')->plainTextToken;
 
     $this->withToken($token)->getJson('/api/roles')->assertOk()->assertJsonCount(3, 'data');
 
-    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin')->value('id'));
+    $id = $this->tenant->run(fn () => Rol::where('clave', 'admin_local')->value('id'));
     $this->withToken($token)->getJson("/api/roles/{$id}")->assertOk();
 
     $this->withToken($token)->postJson('/api/roles', rolValido())->assertForbidden();

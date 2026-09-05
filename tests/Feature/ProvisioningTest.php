@@ -38,7 +38,7 @@ function crearDueno(Tenant $tenant): User
         'apellido' => 'Quispe',
         'email' => 'maria+'.$tenant->id.'@correo.pe',
         'password' => 'secreta123',
-        'rol' => 'dueno',
+        'rol' => 'admin_general',
         'telefono' => '+51987654321',
     ]);
 }
@@ -133,7 +133,7 @@ test('aislación básica: los datos del tenant A no existen en el tenant B', fun
         ->and($clientesEnB)->toBe(0);
 });
 
-test('el provisioning siembra los tres roles de sistema y le da el de dueño al dueño', function () {
+test('el provisioning siembra los tres roles de sistema y le da el de general al titular', function () {
     $tenant = crearTenantRegistrado($this->planPrueba);
     $dueno = crearDueno($tenant);
 
@@ -142,7 +142,7 @@ test('el provisioning siembra los tres roles de sistema y le da el de dueño al 
     $tenant->run(function () use ($dueno) {
         $roles = DB::table('roles')->orderBy('id')->get()->keyBy('clave');
 
-        expect($roles->keys()->all())->toBe(['dueno', 'admin', 'profesional']);
+        expect($roles->keys()->all())->toBe(['admin_general', 'admin_local', 'profesional']);
 
         // Los tres son de sistema: no se borran nunca (siempre tiene que haber
         // dónde meter a un barbero). Solo el de dueño tampoco se edita.
@@ -153,18 +153,18 @@ test('el provisioning siembra los tres roles de sistema y le da el de dueño al 
         $roles->each(fn ($rol) => expect($rol->editado_at)->toBeNull());
 
         // La facturación no se delega ni a la mano derecha del dueño.
-        $admin = json_decode($roles['admin']->permisos, true);
+        $admin = json_decode($roles['admin_local']->permisos, true);
         expect($admin['facturacion'])->toBeNull()
             ->and($admin['caja'])->toBe('gestionar');
 
         // El profesional ve SUS citas, no las de sus compañeros.
         expect((bool) $roles['profesional']->solo_propios)->toBeTrue()
-            ->and((bool) $roles['admin']->solo_propios)->toBeFalse();
+            ->and((bool) $roles['admin_local']->solo_propios)->toBeFalse();
 
         // El rol cuelga de la CUENTA, no de la ficha de profesional: un
         // barbero sin acceso al panel no lleva rol y no le hace falta.
         $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
-        expect($cuenta->rol_id)->toBe((int) $roles['dueno']->id);
+        expect($cuenta->rol_id)->toBe((int) $roles['admin_general']->id);
     });
 });
 
@@ -178,7 +178,7 @@ test('un rol en uso no se puede borrar', function () {
     // borrar el rol de alguien lo dejaría sin permisos de golpe. Lo usa la
     // CUENTA del dueño, que es donde vive ahora `rol_id`.
     $tenant->run(function () {
-        expect(fn () => DB::table('roles')->where('clave', 'dueno')->delete())
+        expect(fn () => DB::table('roles')->where('clave', 'admin_general')->delete())
             ->toThrow(QueryException::class);
     });
 });

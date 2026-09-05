@@ -68,7 +68,7 @@ class ProvisionTenantDatabase implements ShouldBeUnique, ShouldQueue
             }
         });
 
-        $dueno = $tenant->users()->where('rol', 'dueno')->orderBy('id')->first();
+        $dueno = $tenant->users()->where('rol', 'admin_general')->orderBy('id')->first();
 
         if ($dueno !== null) {
             $tenant->run(function () use ($dueno, $tenant) {
@@ -79,7 +79,7 @@ class ProvisionTenantDatabase implements ShouldBeUnique, ShouldQueue
                 if ($usuarioId === null) {
                     $usuarioId = DB::table('usuarios')->insertGetId([
                         'central_user_id' => $dueno->id,
-                        'rol_id' => DB::table('roles')->where('clave', 'dueno')->value('id'),
+                        'rol_id' => DB::table('roles')->where('clave', 'admin_general')->value('id'),
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);

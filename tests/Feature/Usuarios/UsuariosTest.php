@@ -32,7 +32,7 @@ function cuentaValida(array $extra = []): array
         'apellido' => 'Torres',
         'email' => 'recepcion@elrosal.pe',
         'telefono' => '+51987441220',
-        'rol_id' => test()->tenant->run(fn () => Rol::where('clave', 'admin')->value('id')),
+        'rol_id' => test()->tenant->run(fn () => Rol::where('clave', 'admin_local')->value('id')),
     ], $extra);
 }
 
@@ -53,7 +53,7 @@ test('crear una cuenta no crea ninguna ficha de profesional', function () {
         ->json('data');
 
     expect($data['email'])->toBe('recepcion@elrosal.pe')
-        ->and($data['rol']['clave'])->toBe('admin')
+        ->and($data['rol']['clave'])->toBe('admin_local')
         ->and($data['profesional'])->toBeNull();
 
     $this->tenant->run(function () {
@@ -117,7 +117,7 @@ test('la invitación dice quién invita, desde qué negocio y con qué correo', 
         'nombre' => 'Lucía',
         'email' => 'recepcion@elrosal.pe',
         'password' => 'secreta123',
-        'rol' => 'admin',
+        'rol' => 'admin_local',
     ]);
 
     $html = (new InvitacionNotification('token-de-prueba', $this->tenant, 'María Quispe'))
@@ -145,7 +145,7 @@ test('la invitación se sostiene aunque el negocio aún no tenga nombre', functi
         'nombre' => 'Lucía',
         'email' => 'recepcion@elrosal.pe',
         'password' => 'secreta123',
-        'rol' => 'admin',
+        'rol' => 'admin_local',
     ]);
 
     $html = (new InvitacionNotification('token', $this->tenant, null))->toMail($central)->render();
@@ -253,7 +253,7 @@ test('quitar el acceso NO borra a su profesional', function () {
     });
 });
 
-test('al dueño no se le quita el acceso ni se le cambia el rol', function () {
+test('al administrador general no se le quita el acceso ni se le cambia el rol', function () {
     $id = $this->tenant->run(fn () => Usuario::first()->id);
 
     $this->withToken($this->token)->putJson("/api/usuarios/{$id}", cuentaValida([
@@ -265,12 +265,12 @@ test('al dueño no se le quita el acceso ni se le cambia el rol', function () {
         ->assertJsonValidationErrors('usuario');
 });
 
-test('nadie se asciende a dueño: ya hay uno', function () {
+test('nadie se asciende a administrador general: ya hay uno', function () {
     $this->withToken($this->token)->postJson('/api/usuarios', cuentaValida([
-        'rol_id' => $this->tenant->run(fn () => Rol::where('clave', 'dueno')->value('id')),
+        'rol_id' => $this->tenant->run(fn () => Rol::where('clave', 'admin_general')->value('id')),
     ]))
         ->assertStatus(422)
-        ->assertJsonPath('errors.rol_id.0', 'Ya hay un dueño en este negocio.');
+        ->assertJsonPath('errors.rol_id.0', 'Ya hay un administrador general en este negocio.');
 });
 
 /*
@@ -284,13 +284,13 @@ test('nadie se asciende a dueño: ya hay uno', function () {
  * motivo: quien puede crear cuentas y repartir roles puede fabricarse un
  * segundo dueño.
  */
-test('quien no es dueño no gestiona cuentas', function () {
+test('quien no es administrador general no gestiona cuentas', function () {
     $admin = User::create([
         'tenant_id' => $this->tenant->id,
         'nombre' => 'Lucía',
         'email' => 'lucia@elrosal.pe',
         'password' => 'secreta123',
-        'rol' => 'admin',
+        'rol' => 'admin_local',
     ]);
     $token = $admin->createToken('test')->plainTextToken;
 
@@ -306,7 +306,7 @@ test('las cuentas de otro negocio: 404, nunca 403', function () {
     // Una NUEVA en el otro negocio: el id 1 existe en las dos bases.
     $ajena = $otro->run(fn () => Usuario::create([
         'central_user_id' => $duenoAjeno->id + 1000,
-        'rol_id' => Rol::where('clave', 'admin')->value('id'),
+        'rol_id' => Rol::where('clave', 'admin_local')->value('id'),
     ])->id);
 
     expect($this->tenant->run(fn () => Usuario::find($ajena)))->toBeNull();
