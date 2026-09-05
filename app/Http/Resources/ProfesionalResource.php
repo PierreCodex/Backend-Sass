@@ -9,20 +9,23 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * El `Empleado` del contrato: la fila de `profesionales` (tenant) COMPUESTA
- * con su `users` (central). Ninguna de las dos por separado lo es (§1.9).
+ * Quien presta los servicios.
  *
- * El id que sale es el de `profesionales`, no el del usuario central: es el
- * que usan las citas, `servicio_profesional` y `local_profesional` (§2.3).
+ * El id es el de `profesionales`: el que usan las citas,
+ * `servicio_profesional` y `local_profesional` (§2.3).
+ *
+ * `usuario` sale como objeto y es `null` en quien no entra al panel — que es
+ * lo normal en un barbero. Su credencial vive en la central y este Resource no
+ * la toca más allá del email, que es lo único que el listado necesita mostrar.
  */
-class EmpleadoResource extends JsonResource
+class ProfesionalResource extends JsonResource
 {
     /** Lunes a domingo, en ISO-8601: 1..7. */
     private const DIAS = [1, 2, 3, 4, 5, 6, 7];
 
     public function toArray(Request $request): array
     {
-        $usuario = $this->usuarioCentral;
+        $central = $this->usuario?->central;
 
         return [
             'id' => $this->id,
@@ -30,35 +33,31 @@ class EmpleadoResource extends JsonResource
             'foto_url' => ImagenService::url($this->foto),
 
             /*
-             * `usuario` lleva el EMAIL. La columna `users.usuario` se eliminó
-             * (§2.9) y el login es el correo; la clave sigue viajando mientras
-             * el tipo del contrato la conserve, para no romper la tabla que ya
-             * la pinta. Pedido su retiro en pendientes-contrato.
+             * Su cuenta del panel, o `null` si no entra al sistema. Es la
+             * respuesta a «¿este barbero puede ver su agenda?», y el frontend
+             * la usa para pintar el interruptor de darle acceso.
              */
-            'usuario' => $usuario?->email,
-            'email' => $usuario?->email,
-            /*
-             * El rol del NEGOCIO, no el ENUM central. `rol_id` es lo que come
-             * el formulario; el objeto es para pintar el nombre sin pedir la
-             * lista de roles solo para traducir un id. `clave` viaja porque
-             * distingue a los tres de sistema aunque el negocio los renombre.
-             */
-            'rol_id' => $this->rol_id,
-            'rol' => $this->whenLoaded('rol', fn () => [
-                'id' => $this->rol->id,
-                'nombre' => $this->rol->nombre,
-                'clave' => $this->rol->clave,
-            ]),
+            'usuario' => $this->usuario === null ? null : [
+                'id' => $this->usuario->id,
+                'email' => $central?->email,
+                'activo' => (bool) $central?->activo,
+                'rol_id' => $this->usuario->rol_id,
+                'rol' => $this->usuario->rol === null ? null : [
+                    'id' => $this->usuario->rol->id,
+                    'nombre' => $this->usuario->rol->nombre,
+                    'clave' => $this->usuario->rol->clave,
+                ],
+            ],
 
             'cargo' => $this->cargo,
             'telefono' => $this->telefono,
             'activo' => $this->activo,
 
             /*
-             * No está en el contrato pero sí en el esquema (§1.9): decide si la
-             * persona aparece en la agenda y en la tienda pública. NO decide el
-             * cupo del plan. Se emite para que el frontend pueda añadir el
-             * interruptor sin esperar a otra versión del backend.
+             * Si acepta reservas desde la tienda pública. Y SOLO eso: desde que
+             * usuarios y profesionales son cosas distintas, este booleano dejó
+             * de decidir el cupo del plan (lo decide estar aquí y estar activo)
+             * y dejó de significar «es staff» (lo dice tener cuenta).
              */
             'atiende' => $this->atiende,
 

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\User;
+
 return [
 
     /*
@@ -62,7 +64,7 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'model' => env('AUTH_MODEL', User::class),
         ],
 
         // 'users' => [
@@ -94,7 +96,40 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+
+            /*
+             * Conexion CENTRAL, explicita. Sin esto el broker usa la conexion
+             * por defecto, que dentro de `tenancy.init` es la del negocio — y
+             * ahi la tabla de tokens no existe. El reset de hoy se salva porque
+             * sus rutas son publicas y corren fuera de tenancy; la invitacion
+             * de abajo NO, y se descubrio con un 500 en pleno alta de empleado.
+             */
+            'connection' => env('DB_CONNECTION', 'central'),
+
             'expire' => 60,
+            'throttle' => 60,
+        ],
+
+        /*
+         * Invitaciones de empleado. Mismo mecanismo que el reset, pero con
+         * caducidad de 7 dias y TABLA PROPIA.
+         *
+         * Los 60 minutos del reset estan bien para quien acaba de pulsar
+         * «olvide mi contrasena» y malisimos para una invitacion: el barbero
+         * abre el correo por la noche y ya vencio. Y la tabla es aparte porque
+         * cada broker juzga la caducidad con su propia configuracion —
+         * compartiendola, un enlace de reset de hace tres dias se podria
+         * canjear por el endpoint de invitacion y seguiria valiendo.
+         */
+        'invitaciones' => [
+            'provider' => 'users',
+            'table' => 'invitacion_tokens',
+
+            // Central, y aqui es imprescindible: las invitaciones se emiten
+            // DESDE el panel, o sea con la conexion del tenant activa.
+            'connection' => env('DB_CONNECTION', 'central'),
+
+            'expire' => 60 * 24 * 7,
             'throttle' => 60,
         ],
     ],

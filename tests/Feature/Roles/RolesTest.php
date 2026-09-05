@@ -2,9 +2,9 @@
 
 use App\Jobs\ProvisionTenantDatabase;
 use App\Models\Plan;
-use App\Models\Profesional;
 use App\Models\Rol;
 use App\Models\User;
+use App\Models\Usuario;
 use App\Support\RolesSistema;
 use Database\Seeders\PlanSeeder;
 
@@ -71,13 +71,14 @@ test('cada rol emite los 14 módulos aunque su JSON guarde menos', function () {
         ->and($profesional['permisos']['caja'])->toBeNull();
 });
 
-test('el listado dice cuánta gente usa cada rol', function () {
+test('el listado dice cuántas cuentas usan cada rol', function () {
     $respuesta = $this->withToken($this->token)->getJson('/api/roles');
 
     $dueno = collect($respuesta->json('data'))->firstWhere('clave', 'dueno');
 
-    // El provisioning le da al dueño su fila en `profesionales`.
-    expect($dueno['empleados_count'])->toBe(1);
+    // Cuenta CUENTAS, no fichas de profesional: un barbero sin acceso al panel
+    // no lleva rol. El provisioning le crea la suya al dueño.
+    expect($dueno['usuarios_count'])->toBe(1);
 });
 
 test('las barandillas viajan resueltas, no las deduce el cliente', function () {
@@ -217,7 +218,7 @@ test('un rol en uso no se borra: 422 con la cuenta, no un error de integridad', 
     $id = $this->withToken($this->token)->postJson('/api/roles', rolValido())->json('data.id');
 
     $this->tenant->run(function () use ($id) {
-        Profesional::query()->update(['rol_id' => $id]);
+        Usuario::query()->update(['rol_id' => $id]);
     });
 
     $this->withToken($this->token)->deleteJson("/api/roles/{$id}")

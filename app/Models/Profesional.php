@@ -10,12 +10,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Perfil laboral dentro de la BD del tenant. La identidad (email, password,
- * rol) vive en la central: `central_user_id` la referencia SIN foreign key.
+ * Quien PRESTA los servicios.
  *
- * El `Empleado` del contrato (§1.9) es la COMPOSICIÓN de esta fila con su
- * `users` central; ninguna de las dos por separado lo es. Quien lo arma es
- * `EmpleadoResource`, y quien mantiene las dos en pie, `EmpleadoService`.
+ * Independiente de quien entra al panel: un barbero puede no tener cuenta, y
+ * una recepcionista tiene cuenta y no está aquí. `usuario_id` es la unión
+ * opcional entre ambos mundos, y es `nullOnDelete`: quitarle el acceso a
+ * alguien no se lleva por delante su ficha, sus citas ni sus comisiones.
  */
 class Profesional extends Model
 {
@@ -35,7 +35,7 @@ class Profesional extends Model
     public const TIPOS_CON_COMISION = ['comision', 'ambos'];
 
     protected $fillable = [
-        'central_user_id', 'rol_id', 'nombre', 'cargo', 'foto', 'telefono',
+        'usuario_id', 'nombre', 'cargo', 'foto', 'telefono',
         'tipo_pago', 'comision_pct', 'sueldo_monto', 'sueldo_periodo',
         'horario', 'atiende', 'activo',
     ];
@@ -43,24 +43,22 @@ class Profesional extends Model
     protected $casts = [
         'atiende' => 'boolean',
         'activo' => 'boolean',
-        // {dias: [...], excepciones: [...]} — ver EmpleadoResource.
+        // {dias: [...], excepciones: [...]} — ver ProfesionalResource.
         'horario' => 'array',
         'comision_pct' => 'decimal:2',
         'sueldo_monto' => 'decimal:2',
     ];
 
-    /**
-     * El usuario central de esta persona.
-     *
-     * NO es una relación de Eloquent: `users` vive en otra base y MySQL no
-     * hace JOIN entre bases. La rellena a mano `EmpleadoService::conUsuarios()`
-     * con una sola consulta por página, no una por fila.
-     */
-    public ?User $usuarioCentral = null;
-
-    public function rol(): BelongsTo
+    /** Su cuenta del panel, si tiene. NULL = no entra al sistema. */
+    public function usuario(): BelongsTo
     {
-        return $this->belongsTo(Rol::class);
+        return $this->belongsTo(Usuario::class);
+    }
+
+    /** Atajo: el rol sale de la cuenta, no de la ficha. */
+    public function rol(): ?Rol
+    {
+        return $this->usuario?->rol;
     }
 
     public function servicios(): BelongsToMany

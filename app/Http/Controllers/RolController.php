@@ -14,6 +14,20 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * **Escribir** roles es solo del dueño. Leerlos, no.
+ *
+ * Si un administrador pudiera crearlos, se haría uno con todo marcado y se lo
+ * asignaría: escalada de privilegios en dos clics. Pero LEERLOS tiene que poder
+ * cualquiera que abra el formulario de una cuenta, o el select de rol se queda
+ * vacío. Y la lista no es un secreto dentro del negocio: es su organigrama.
+ *
+ * Se deja abierta a cualquier usuario del tenant, y no a `dueno|admin`, para no
+ * inventar una SEGUNDA tabla de permisos al lado de la que ya existe: la regla
+ * de este proyecto es preguntar por capacidades y nunca por el rol. Mientras esa
+ * resolución no exista —deuda anotada—, un único candado por propiedad es más
+ * honesto que dos reglas paralelas que se separan.
+ */
 class RolController extends Controller
 {
     public function __construct(private RolService $service) {}
@@ -21,7 +35,7 @@ class RolController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $roles = Rol::query()
-            ->withCount('profesionales')
+            ->withCount('usuarios')
             ->when($request->string('search')->trim()->value(), function ($q, string $search) {
                 $q->where('nombre', 'like', "%{$search}%");
             })
@@ -47,7 +61,7 @@ class RolController extends Controller
 
     public function show(Rol $rol): RolResource
     {
-        return RolResource::make($rol->loadCount('profesionales'));
+        return RolResource::make($rol->loadCount('usuarios'));
     }
 
     public function store(RolRequest $request): JsonResponse
@@ -85,36 +99,5 @@ class RolController extends Controller
         $this->service->eliminar($rol);
 
         return response()->json(status: 204);
-    }
-
-    /**
-     * **Escribir** roles es solo del dueño. Leerlos, no.
-     *
-     * Si un administrador pudiera crearlos, se haría uno con todo marcado y se
-     * lo asignaría: escalada de privilegios en dos clics. Por eso su preset
-     * trae `empleados: gestionar` y aun así esto se comprueba aparte — dar de
-     * alta gente y decidir qué puede hacer la gente son permisos distintos.
-     *
-     * Pero LEERLOS tiene que poder cualquiera que abra el formulario de
-     * empleados, o el select de rol se queda vacío para el administrador que
-     * sí puede dar altas. Y la lista no es un secreto dentro del negocio: es
-     * su organigrama.
-     *
-     * Se deja abierta a cualquier usuario del tenant, y no a `dueno|admin`,
-     * para no inventar una SEGUNDA tabla de permisos por rol al lado de la que
-     * ya existe. La regla de este proyecto es preguntar por capacidades y
-     * nunca por el rol (`RolesSistema`); mientras esa resolución no exista
-     * —deuda anotada—, un único candado por propiedad es más honesto que dos
-     * reglas paralelas que se separan. Cuando llegue, la lectura pasa a pedir
-     * `empleados.ver`.
-     *
-     * 403 y no 404: el recurso existe y es del negocio de quien pregunta; lo
-     * que falta es rango. El 404 se reserva para lo que es de otro tenant.
-     */
-    private function soloElDueno(Request $request): void
-    {
-        if ($request->user()->rol !== 'dueno') {
-            abort(403, 'Solo el dueño del negocio puede gestionar los roles.');
-        }
     }
 }

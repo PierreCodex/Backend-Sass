@@ -35,6 +35,77 @@ test('migrar tenants salta los que se registraron y no verificaron el correo', f
     expect($conBd->run(fn () => Schema::hasTable('roles')))->toBeTrue();
 });
 
+/*
+ * La regresión del 2026-09-04, y la lección que la produjo.
+ *
+ * La separación de usuarios y profesionales se hizo EDITANDO las migraciones
+ * que ya habían corrido. Parecía gratis —cero tenants en producción— pero
+ * Laravel identifica las migraciones por nombre de archivo: las viejas seguían
+ * registradas, el archivo nuevo salía pendiente, y su `Schema::create('roles')`
+ * chocaba contra la tabla que ya existía. El tenant se quedaba a medias.
+ *
+ * Este test reconstruye a mano el estado ANTERIOR —con datos dentro— y
+ * comprueba que la migración entra y no se lleva nada por delante. Es el caso
+ * que en producción serían todos los negocios con clientes.
+ */
+test('un tenant provisionado ANTES de la separación se migra sin perder datos', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    $dueno = crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $rolDueno = $tenant->run(fn () => DB::table('roles')->where('clave', 'dueno')->value('id'));
+
+    // Rebobinar al esquema viejo, con su fila de profesional como la tenía.
+    $tenant->run(function () use ($dueno, $rolDueno) {
+        Schema::table('profesionales', function ($table) {
+            $table->dropForeign(['usuario_id']);
+            $table->dropUnique(['usuario_id']);
+            $table->dropColumn('usuario_id');
+            // CON su unique, como lo tenia: es otra de las cosas que la
+            // migracion tiene que saber quitar.
+            $table->unsignedBigInteger('central_user_id')->nullable()->unique()->after('id');
+            // CON su foreign key, como la tenía de verdad: es lo que la
+            // migración tiene que saber quitar.
+            $table->foreignId('rol_id')->nullable()->after('central_user_id')
+                ->constrained('roles')->restrictOnDelete();
+        });
+
+        DB::table('profesionales')->update([
+            'central_user_id' => $dueno->id,
+            'rol_id' => $rolDueno,
+            'nombre' => 'María Quispe',
+        ]);
+
+        Schema::dropIfExists('usuarios');
+
+        DB::table('migrations')
+            ->where('migration', '2026_09_04_000001_separar_usuarios_de_profesionales')
+            ->delete();
+    });
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $tenant->run(function () use ($dueno, $rolDueno) {
+        // Los roles sembrados siguen ahí: la migración no recrea esa tabla.
+        expect(DB::table('roles')->count())->toBe(3);
+
+        // Y su gente conserva el vínculo con sus permisos.
+        $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
+
+        expect($cuenta)->not->toBeNull()
+            ->and($cuenta->rol_id)->toBe($rolDueno);
+
+        $profesional = DB::table('profesionales')->first();
+
+        expect($profesional->usuario_id)->toBe((int) $cuenta->id)
+            ->and($profesional->nombre)->toBe('María Quispe');
+
+        // Y las columnas viejas se fueron.
+        expect(Schema::hasColumn('profesionales', 'central_user_id'))->toBeFalse()
+            ->and(Schema::hasColumn('profesionales', 'rol_id'))->toBeFalse();
+    });
+});
+
 test('un tenant que revienta no deja sin migrar a los que vienen detrás', function () {
     /*
      * El roto va PRIMERO: es el orden lo que prueba que la tanda continúa. El

@@ -162,6 +162,27 @@ concretos:
 > La regla vigente está en `CLAUDE.md` § Decisiones de producto y en
 > `EmpleadoService::validarCupo`. El 422 del tope cae en `atiende`.
 
+> ⚠️ **Superado también el 2026-09-04 — usuarios y profesionales se separan.**
+>
+> «Todo miembro del staff tiene fila en `profesionales`» dejó de ser cierto. Hay
+> dos tablas del tenant y ninguna implica la otra: **`usuarios`** (quien entra
+> al panel, con su `rol_id`) y **`profesionales`** (quien presta los servicios,
+> con `usuario_id` nullable). Una recepcionista es lo primero y no lo segundo;
+> un barbero que no toca el sistema, al revés.
+>
+> El motivo fue un síntoma concreto: dar de alta a una recepcionista obligaba a
+> declarar `tipo_pago`, y entraba con un 50% de comisión sobre servicios que no
+> presta. Cuando el modelo obliga a rellenar campos sin sentido, el modelo está
+> mal. AgendaPro lo tiene separado y su guía lo confirma: el formulario de
+> profesional no pide correo, y crear su usuario es una casilla opcional.
+>
+> Con esto **el cupo del plan vuelve a ser trivial**: filas activas de
+> `profesionales`, sin excepciones. Y `atiende` recupera su único significado —
+> si aparece en la tienda pública.
+>
+> La regla vigente está en `CLAUDE.md` § Decisiones de producto y el detalle en
+> `docs/pendientes-contrato.md` § [Sprint 2] Usuarios y Profesionales.
+
 ### 1.10 `productos` (tenant)
 
 | Contrato | En el SQL | Veredicto |

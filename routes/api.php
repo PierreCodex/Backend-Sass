@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\ArchivoTenantController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\InvitacionController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
@@ -11,11 +12,12 @@ use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
-use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
+use App\Http\Controllers\ProfesionalController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
 use App\Http\Controllers\RolController;
+use App\Http\Controllers\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -52,6 +54,10 @@ Route::middleware('throttle:20,1')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::post('/forgot-password', [PasswordController::class, 'forgot']);
     Route::post('/reset-password', [PasswordController::class, 'reset']);
+
+    // El empleado invitado elige su contrasena. Publico como el reset:
+    // todavia no puede iniciar sesion, que es justo lo que viene a arreglar.
+    Route::post('/invitacion/aceptar', [InvitacionController::class, 'aceptar']);
 });
 
 /*
@@ -120,13 +126,23 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
                 ->parameters(['roles' => 'rol']);
 
             /*
-             * ANTES del apiResource: si no, `empleados/{empleado}` se traga
-             * `empleados/resumen` y el binding intenta buscar un profesional
+             * Quien ENTRA al panel. Distinto de los profesionales: una
+             * recepcionista esta aqui y no alli, y un barbero sin cuenta al
+             * reves.
+             */
+            Route::post('usuarios/{usuario}/invitacion', [UsuarioController::class, 'invitar']);
+            Route::apiResource('usuarios', UsuarioController::class);
+
+            /*
+             * ANTES del apiResource: si no, `profesionales/{profesional}` se
+             * traga `profesionales/resumen` y el binding intenta buscar uno
              * llamado "resumen".
              */
-            Route::get('empleados/resumen', [EmpleadoController::class, 'resumen']);
-            Route::apiResource('empleados', EmpleadoController::class)
-                ->parameters(['empleados' => 'empleado']);
+            Route::get('profesionales/resumen', [ProfesionalController::class, 'resumen']);
+            Route::apiResource('profesionales', ProfesionalController::class)
+                // Sin esto el parametro seria `{profesionale}`: Str::singular
+                // no sabe castellano.
+                ->parameters(['profesionales' => 'profesional']);
         });
 
         Route::get('/onboarding', [OnboardingController::class, 'show']);

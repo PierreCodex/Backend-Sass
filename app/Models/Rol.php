@@ -30,9 +30,16 @@ class Rol extends Model
         'editado_at' => 'datetime',
     ];
 
-    public function profesionales(): HasMany
+    /**
+     * Las cuentas que llevan este rol.
+     *
+     * Cuelga de `usuarios` y no de `profesionales` desde la separación del
+     * 2026-09-04: el rol es de quien ENTRA al panel, no de quien presta los
+     * servicios. Un barbero sin cuenta no tiene rol, y no le hace falta.
+     */
+    public function usuarios(): HasMany
     {
-        return $this->hasMany(Profesional::class);
+        return $this->hasMany(Usuario::class);
     }
 
     /** @return array<int, string> Las claves de los roles de sistema. */

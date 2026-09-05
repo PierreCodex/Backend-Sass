@@ -36,8 +36,19 @@ class PerfilService
             // verificó el correo, y el job creará la fila con los datos ya nuevos.
             if ($tenant !== null && $tenant->db_provisionada) {
                 $tenant->run(function () use ($user) {
-                    DB::table('profesionales')
+                    /*
+                     * Por su cuenta del tenant: desde la separacion de
+                     * usuarios y profesionales, `profesionales` ya no guarda el
+                     * id central. Si esta persona no tiene ficha de profesional
+                     * —una recepcionista, o un dueno que no atiende— el update
+                     * no encuentra nada y no pasa nada, que es lo correcto.
+                     */
+                    $usuarioId = DB::table('usuarios')
                         ->where('central_user_id', $user->id)
+                        ->value('id');
+
+                    DB::table('profesionales')
+                        ->where('usuario_id', $usuarioId)
                         ->update([
                             'nombre' => trim($user->nombre.' '.$user->apellido),
                             'telefono' => $user->telefono,

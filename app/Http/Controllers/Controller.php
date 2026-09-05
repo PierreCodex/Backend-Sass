@@ -30,6 +30,25 @@ abstract class Controller
      * subconsultas de `withCount` incluidas— en una sola respuesta. No hace
      * falta mala fe para dispararlo; basta un cliente de la API con un off-by-one.
      */
+    /**
+     * Gestionar roles y cuentas es solo del dueno.
+     *
+     * Quien puede crear cuentas y repartir roles puede fabricarse un segundo
+     * dueno: se hace un rol con todo marcado y se lo asigna. Por eso el preset
+     * de Administrador trae `empleados: gestionar` y aun asi esto se comprueba
+     * aparte — dar de alta gente y decidir que puede hacer la gente son
+     * permisos distintos.
+     *
+     * 403 y no 404: el recurso existe y es del negocio de quien pregunta; lo
+     * que falta es rango. El 404 se reserva para lo que es de otro tenant.
+     */
+    protected function soloElDueno(Request $request): void
+    {
+        if ($request->user()->rol !== 'dueno') {
+            abort(403, 'Solo el dueño del negocio puede hacer esto.');
+        }
+    }
+
     protected function porPagina(Request $request): int
     {
         $pedido = $request->integer('per_page', self::POR_PAGINA);

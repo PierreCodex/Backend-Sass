@@ -71,15 +71,43 @@ class ProvisionTenantDatabase implements ShouldBeUnique, ShouldQueue
         $dueno = $tenant->users()->where('rol', 'dueno')->orderBy('id')->first();
 
         if ($dueno !== null) {
-            $tenant->run(function () use ($dueno) {
-                $yaExiste = DB::table('profesionales')
+            $tenant->run(function () use ($dueno, $tenant) {
+                $usuarioId = DB::table('usuarios')
                     ->where('central_user_id', $dueno->id)
+                    ->value('id');
+
+                if ($usuarioId === null) {
+                    $usuarioId = DB::table('usuarios')->insertGetId([
+                        'central_user_id' => $dueno->id,
+                        'rol_id' => DB::table('roles')->where('clave', 'dueno')->value('id'),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                /*
+                 * La ficha de PROFESIONAL solo se crea si en el registro
+                 * respondió que trabaja solo.
+                 *
+                 * Quien dijo `independiente` es su propio profesional y no
+                 * tendría a quién dar de alta; crearle la ficha le ahorra un
+                 * paso y le deja la tienda pública utilizable desde el primer
+                 * día. A los demás se la pide el checklist de onboarding
+                 * («agrega tu primer profesional»), y crearla a ciegas sería
+                 * suponer que el dueño atiende —falso en una clínica— y
+                 * gastarle una plaza del plan sin que la pida.
+                 */
+                if ($tenant->rango_profesionales !== 'independiente') {
+                    return;
+                }
+
+                $yaExiste = DB::table('profesionales')
+                    ->where('usuario_id', $usuarioId)
                     ->exists();
 
                 if (! $yaExiste) {
                     DB::table('profesionales')->insert([
-                        'central_user_id' => $dueno->id,
-                        'rol_id' => DB::table('roles')->where('clave', 'dueno')->value('id'),
+                        'usuario_id' => $usuarioId,
                         'nombre' => trim($dueno->nombre.' '.$dueno->apellido),
                         'telefono' => $dueno->telefono,
                         'atiende' => true,
