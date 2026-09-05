@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
+use App\Http\Controllers\CapacidadesController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\GrupoController;
@@ -108,14 +109,50 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
              * Sin `{id}`: el negocio sale del token. No hay ruta que apunte a
              * otro.
              */
-            Route::get('configuracion', [ConfiguracionController::class, 'show']);
-            Route::put('configuracion', [ConfiguracionController::class, 'update']);
+            Route::get('configuracion', [ConfiguracionController::class, 'show'])
+                ->middleware('puede:configuracion');
+            Route::put('configuracion', [ConfiguracionController::class, 'update'])
+                ->middleware('puede:configuracion,gestionar');
 
-            Route::apiResource('categorias-servicios', CategoriaServicioController::class)
-                ->parameters(['categorias-servicios' => 'categoria']);
+            /*
+             * Lo que puede hacer quien esta mirando, ya resuelto. El panel lo
+             * pide una vez para armar su menu — pero esconder una opcion NO es
+             * autorizacion: cada endpoint comprueba lo suyo igual.
+             */
+            Route::get('capacidades', CapacidadesController::class);
 
-            Route::apiResource('servicios', ServicioController::class);
-            Route::apiResource('clientes', ClienteController::class);
+            /*
+              * Cada modulo tras su capacidad. `ver` para leer y `gestionar`
+              * para escribir — y `gestionar` incluye `ver`, asi que no hace
+              * falta anotar los index dos veces.
+              */
+            Route::middleware('puede:servicios')->group(function () {
+                Route::get('categorias-servicios', [CategoriaServicioController::class, 'index']);
+                Route::get('categorias-servicios/{categoria}', [CategoriaServicioController::class, 'show']);
+                Route::get('servicios', [ServicioController::class, 'index']);
+                Route::get('servicios/{servicio}', [ServicioController::class, 'show']);
+            });
+
+            Route::middleware('puede:servicios,gestionar')->group(function () {
+                Route::post('categorias-servicios', [CategoriaServicioController::class, 'store']);
+                Route::match(['put', 'patch'], 'categorias-servicios/{categoria}', [CategoriaServicioController::class, 'update']);
+                Route::delete('categorias-servicios/{categoria}', [CategoriaServicioController::class, 'destroy']);
+
+                Route::post('servicios', [ServicioController::class, 'store']);
+                Route::match(['put', 'patch'], 'servicios/{servicio}', [ServicioController::class, 'update']);
+                Route::delete('servicios/{servicio}', [ServicioController::class, 'destroy']);
+            });
+
+            Route::middleware('puede:clientes')->group(function () {
+                Route::get('clientes', [ClienteController::class, 'index']);
+                Route::get('clientes/{cliente}', [ClienteController::class, 'show']);
+            });
+
+            Route::middleware('puede:clientes,gestionar')->group(function () {
+                Route::post('clientes', [ClienteController::class, 'store']);
+                Route::match(['put', 'patch'], 'clientes/{cliente}', [ClienteController::class, 'update']);
+                Route::delete('clientes/{cliente}', [ClienteController::class, 'destroy']);
+            });
 
             /*
              * Roles del negocio. Van con Empleados porque alimentan su select
@@ -130,20 +167,39 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
 
             // Las sedes del negocio. El principal lo decide el backend y no
             // se borra.
-            Route::apiResource('locales', LocalController::class)
-                ->parameters(['locales' => 'local']);
+            Route::middleware('puede:locales')->group(function () {
+                Route::get('locales', [LocalController::class, 'index']);
+                Route::get('locales/{local}', [LocalController::class, 'show']);
+            });
+
+            Route::middleware('puede:locales,gestionar')->group(function () {
+                Route::post('locales', [LocalController::class, 'store']);
+                Route::match(['put', 'patch'], 'locales/{local}', [LocalController::class, 'update']);
+                Route::delete('locales/{local}', [LocalController::class, 'destroy']);
+            });
 
             /*
              * Quien atiende en cada sede. Sin `store` ni `destroy`: el PUT hace
              * `syncWithoutDetaching`, asi que asigna y edita a la vez, y para
              * sacar a alguien se apaga `habilitado`.
              */
-            Route::get('locales/{local}/profesionales', [LocalProfesionalController::class, 'index']);
-            Route::put('locales/{local}/profesionales/{profesional}', [LocalProfesionalController::class, 'update']);
+            Route::get('locales/{local}/profesionales', [LocalProfesionalController::class, 'index'])
+                ->middleware('puede:locales');
+            Route::put('locales/{local}/profesionales/{profesional}', [LocalProfesionalController::class, 'update'])
+                ->middleware('puede:locales,gestionar');
 
             // Agrupaciones de locales, profesionales y servicios. Hoy no las
             // consulta nadie mas que su propia pantalla.
-            Route::apiResource('grupos', GrupoController::class);
+            Route::middleware('puede:locales')->group(function () {
+                Route::get('grupos', [GrupoController::class, 'index']);
+                Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
+            });
+
+            Route::middleware('puede:locales,gestionar')->group(function () {
+                Route::post('grupos', [GrupoController::class, 'store']);
+                Route::match(['put', 'patch'], 'grupos/{grupo}', [GrupoController::class, 'update']);
+                Route::delete('grupos/{grupo}', [GrupoController::class, 'destroy']);
+            });
 
             /*
              * Quien ENTRA al panel. Distinto de los profesionales: una
@@ -158,11 +214,17 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
              * traga `profesionales/resumen` y el binding intenta buscar uno
              * llamado "resumen".
              */
-            Route::get('profesionales/resumen', [ProfesionalController::class, 'resumen']);
-            Route::apiResource('profesionales', ProfesionalController::class)
-                // Sin esto el parametro seria `{profesionale}`: Str::singular
-                // no sabe castellano.
-                ->parameters(['profesionales' => 'profesional']);
+            Route::middleware('puede:empleados')->group(function () {
+                Route::get('profesionales/resumen', [ProfesionalController::class, 'resumen']);
+                Route::get('profesionales', [ProfesionalController::class, 'index']);
+                Route::get('profesionales/{profesional}', [ProfesionalController::class, 'show']);
+            });
+
+            Route::middleware('puede:empleados,gestionar')->group(function () {
+                Route::post('profesionales', [ProfesionalController::class, 'store']);
+                Route::match(['put', 'patch'], 'profesionales/{profesional}', [ProfesionalController::class, 'update']);
+                Route::delete('profesionales/{profesional}', [ProfesionalController::class, 'destroy']);
+            });
         });
 
         Route::get('/onboarding', [OnboardingController::class, 'show']);

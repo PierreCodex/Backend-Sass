@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\InicializarTenancy;
+use App\Http\Middleware\VerificarCapacidad;
 use App\Http\Middleware\SuscripcionActiva;
 use App\Http\Middleware\ValidarTenantDelToken;
 use Illuminate\Foundation\Application;
@@ -20,6 +21,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.token' => ValidarTenantDelToken::class,
             'suscripcion.activa' => SuscripcionActiva::class,
             'tenancy.init' => InicializarTenancy::class,
+            // `puede:clientes,gestionar` — la puerta de cada modulo.
+            'puede' => VerificarCapacidad::class,
         ]);
 
         /*

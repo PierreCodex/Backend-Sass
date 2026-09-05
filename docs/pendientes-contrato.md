@@ -278,6 +278,104 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 3] Los permisos ya se aplican: middleware de capacidades
+
+Hasta hoy `roles.permisos` se guardaba y **no lo leía nadie**. Un profesional
+cuyo rol decía «clientes: ver» podía crear, editar y borrar clientes igual que
+el titular; lo único que existía era el candado de administrador general sobre
+roles y cuentas. Teníamos tres ejes de permisos construidos —qué, sobre quién,
+dónde— y ninguno hacía nada.
+
+Eso se acabó. Y llega antes del Sprint 4 a propósito: las citas son el primer
+sitio donde a alguien le importa de verdad quién ve qué.
+
+### Cómo funciona
+
+Cada endpoint de módulo va detrás de su capacidad
+(`puede:clientes,gestionar`). Se pregunta por **capacidad y nunca por rol** —
+es lo que permite que el negocio invente «Recepcionista» o «Barbero con
+inventario» sin que haya que tocar un endpoint: cambia de dónde sale la
+respuesta, no quién la hace. Hay test de eso.
+
+**`gestionar` incluye `ver`**, así que los listados se anotan una sola vez.
+
+**Falla cerrado**: sin cuenta en el negocio o sin rol, no puede nada.
+
+### Lo que cambia de cara al cliente
+
+**`403` con `codigo: "sin_permiso"`** en cualquier endpoint cuyo módulo no
+tenga en su matriz.
+
+Es 403 y no 404 a propósito: el recurso existe y es de su negocio, lo que falta
+es permiso. El 404 se reserva para lo de otro tenant — mezclarlos haría
+imposible distinguir «no tienes acceso» de «no existe», que es justo lo que el
+panel necesita para decidir si enseña un aviso o una pantalla vacía.
+
+**La pared de cobro gana**: en un negocio suspendido sale
+`suscripcion_vencida` aunque además falte el permiso, porque es el error sobre
+el que alguien puede actuar. Hay test de la precedencia.
+
+### `GET /api/capacidades`
+
+Lo que puede hacer quien está mirando, **ya resuelto**:
+
+```json
+{
+  "data": {
+    "permisos": { "dashboard": "ver", "citas": "gestionar", "caja": null, "…": null },
+    "solo_propios": true,
+    "locales": null
+  }
+}
+```
+
+- **`permisos`**: los 14 módulos siempre, `null` donde no hay acceso.
+- **`solo_propios`**: ve lo suyo y no lo de sus compañeros. No es un permiso —
+  es sobre *quién*, no sobre *qué*.
+- **`locales`**: `null` = todas las sedes; una lista de ids = solo esas. `null`
+  y no la lista completa, para que se distinga «sin restricción» de
+  «restringido a estas» y una lista vacía signifique de verdad ninguna.
+
+Endpoint aparte y no dentro del `Usuario` de `/login` por arquitectura: los
+permisos viven en la base del negocio, y `/login` y `/user` se resuelven
+enteros en la central — conectar a la del tenant para cada uno cuesta y además
+falla con 503 mientras el provisioning no ha terminado.
+
+**Lo manda el backend resuelto y no la matriz cruda**: si el menú dedujera los
+permisos por su cuenta acabaría habiendo dos matrices, y la que manda es la de
+aquí.
+
+**Y conviene decirlo aunque sea obvio: esconder una opción del menú NO es
+autorización.** El backend responde 403 igual. Esto sirve para no enseñar
+puertas cerradas, no para cerrarlas.
+
+### El alcance por sedes ya filtra
+
+`GET /locales` devuelve solo las sedes asignadas, y una fuera del alcance da
+**404** — no 403. Para esa persona esa sede no existe, igual que la de otro
+negocio; un 403 confirmaría que está ahí, que es lo que el alcance viene a
+ocultar. Lo mismo en `/locales/{id}/profesionales`.
+
+Con esto **el selector de sedes ya se puede ofrecer en el panel**: lo que
+guarda, ahora se cumple. (Antes de esto pedimos no enseñarlo, y ese aviso
+queda anulado.)
+
+### Lo que todavía NO hace
+
+**`solo_propios` se emite pero no filtra nada.** Es correcto: hoy no hay nada
+suyo que filtrar — sus citas llegan en el Sprint 4, y es ahí donde el flag
+empieza a significar algo. Se emite ya para que el panel pueda contar con él
+desde el principio.
+
+**Roles y cuentas siguen siendo del administrador general** por un candado
+aparte, no por capacidad: no son módulos de la matriz. Dar de alta gente y
+decidir qué puede hacer la gente son permisos distintos, y quien reparte roles
+puede fabricarse un segundo titular.
+
+- **Estado**: hecho (2026-09-05). Suite: 234 tests, 1055 aserciones.
+
+---
+
 ## [Sprint 3] Locales, el pivote por sede, grupos, y el alcance por sedes
 
 Módulo 3.A cerrado por el lado backend (2026-09-05). Cuatro cosas.
@@ -365,12 +463,10 @@ puerta abierta por omisión sin que se sepa si fue decisión u olvido.
 Con esto quedan tres ejes ortogonales: `roles.permisos` dice **qué**,
 `roles.solo_propios` dice **sobre quién**, y esto dice **dónde**.
 
-**NO lo ofrezcáis todavía en el panel.** Hoy el backend guarda el dato y no
-filtra nada, porque no existe el middleware de capacidades — `roles.permisos`
-tampoco se aplica. Un ajuste que no filtra es peor que no tenerlo: le diría al
-negocio que su recepcionista no ve la otra sucursal cuando sí la ve. Guardar el
-dato ahora es lo que no se puede hacer después sin re-migrar; enseñarlo puede
-esperar al middleware.
+~~**NO lo ofrezcáis todavía en el panel.**~~ **Superado el mismo día**: el
+middleware de capacidades ya existe y `GET /locales` filtra por alcance. Lo que
+se guarda, se cumple — el selector de sedes se puede ofrecer. Ver el apartado
+de arriba.
 
 - **Estado**: hecho (2026-09-05). Suite: 221 tests, 1014 aserciones.
 
