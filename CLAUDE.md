@@ -110,6 +110,13 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 
   **`atiende` significa UNA sola cosa**: si aparece en la tienda pública. No
   decide el cupo ni si alguien es staff.
+- **Las reglas de seguridad viven en el SERVICE, no en el controlador.** Un
+  candado en un controlador protege un endpoint; el mismo candado en el service
+  protege todos los caminos. Lo aprendimos con una escalada real (2026-09-05):
+  «solo un administrador general» estaba en `UsuarioController`, y el alta de
+  cuenta desde `/profesionales` entraba por debajo — un administrador local se
+  ascendía en dos peticiones. Y nunca dos copias de la misma regla: la que se
+  olvida es la que no se prueba
 - **Los permisos se aplican con el middleware `puede:modulo,nivel`** (desde el
   2026-09-05). Se pregunta por CAPACIDAD y nunca por rol: es lo que deja que el
   negocio invente sus propios roles sin tocar un endpoint. `gestionar` incluye

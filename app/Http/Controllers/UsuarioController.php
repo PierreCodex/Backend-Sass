@@ -6,7 +6,6 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Usuarios\UsuarioRequest;
 use App\Http\Resources\CuentaResource;
-use App\Models\Rol;
 use App\Models\User;
 use App\Models\Usuario;
 use App\Services\UsuarioService;
@@ -63,14 +62,9 @@ class UsuarioController extends Controller
     {
         $this->soloElAdminGeneral($request);
 
-        // Hay exactamente un administrador general por negocio y lo crea el registro. Darle ese
-        // rol a un alta nueva fabricaría un segundo superusuario.
-        if (Rol::find($request->validated('rol_id'))?->esAdminGeneral()) {
-            throw ValidationException::withMessages([
-                'rol_id' => 'Ya hay un administrador general en este negocio.',
-            ]);
-        }
-
+        // El candado de «un solo administrador general» vive en el service, que
+        // es por donde pasan TODOS los caminos — este y el alta desde
+        // /profesionales, que antes lo esquivaba.
         return CuentaResource::make($this->service->crear($request->validated()))
             ->response()
             ->setStatusCode(201);
@@ -79,7 +73,6 @@ class UsuarioController extends Controller
     public function update(UsuarioRequest $request, Usuario $usuario): CuentaResource
     {
         $this->soloElAdminGeneral($request);
-        $this->protegerAlAdminGeneral($usuario, (int) $request->validated('rol_id'));
 
         return CuentaResource::make($this->service->actualizar($usuario, $request->validated()));
     }
@@ -127,30 +120,5 @@ class UsuarioController extends Controller
         $this->service->invitar($usuario);
 
         return response()->json(['message' => 'Invitación reenviada.']);
-    }
-
-    /**
-     * El rol de administrador general no se reparte ni se quita.
-     *
-     * Hay exactamente uno por negocio: quitárselo lo deja sin acceso a
-     * facturación, y dárselo a otro fabrica un segundo superusuario. Cambiar de
-     * de titular es una operación de soporte, no un select del formulario.
-     */
-    private function protegerAlAdminGeneral(Usuario $usuario, int $rolNuevo): void
-    {
-        $esDueno = (bool) $usuario->rol?->esAdminGeneral();
-        $seraDueno = (bool) Rol::find($rolNuevo)?->esAdminGeneral();
-
-        if ($esDueno && ! $seraDueno) {
-            throw ValidationException::withMessages([
-                'rol_id' => 'El administrador general no puede cambiar de rol.',
-            ]);
-        }
-
-        if (! $esDueno && $seraDueno) {
-            throw ValidationException::withMessages([
-                'rol_id' => 'Ya hay un administrador general en este negocio.',
-            ]);
-        }
     }
 }

@@ -278,6 +278,89 @@ y otro nombre. El de Dueño no se duplica (`duplicable: false`).
 
 ---
 
+## [Sprint 3] Escalada de privilegios por `/profesionales` — cerrada
+
+Reportada por la sesión de frontend el 2026-09-05, y el diagnóstico era exacto.
+
+### Qué pasaba
+
+`POST /profesionales` acepta el objeto opcional `usuario: {email, rol_id}` y
+llama derecho a `UsuarioService::crear()`. El candado de «un solo administrador
+general» vivía **solo en `UsuarioController`**, así que ese camino entraba por
+debajo.
+
+Lo decisivo es quién puede llamar a cada ruta:
+
+| Ruta | Quién |
+|---|---|
+| `POST /usuarios` | solo el administrador general |
+| `POST /profesionales` | `puede:empleados,gestionar` — que el **administrador local** tiene |
+
+O sea: un administrador local se daba de alta como profesional con el `rol_id`
+del general y se quedaba con facturación y con la capacidad de repartir roles.
+Dos peticiones. Y la cuenta resultante **no se podía deshacer desde el panel**,
+porque `destroy` se niega sobre un administrador general.
+
+Es exactamente el escenario que nuestra propia documentación nombra al explicar
+por qué roles y cuentas son solo del general: *«quien puede crear cuentas y
+repartir roles puede fabricarse un segundo dueño»*. La regla estaba escrita;
+este camino no pasaba por donde se aplica.
+
+### La corrección
+
+**El invariante vive ahora en `UsuarioService`**, que es por donde pasan los dos
+caminos: `crear()` rechaza `admin_general` siempre, y `actualizar()` protege el
+«ni se le quita a quien lo tiene, ni se le da a quien no».
+
+Y se **quitaron las comprobaciones duplicadas del controlador**. Dos copias de
+una regla de seguridad no son el doble de seguras: son dos sitios que divergen,
+y el que se olvida es justo el que no se prueba.
+
+Puesto ahí, el día que aparezca un tercer camino —una importación, un comando—
+ya está cubierto. De hecho el comando de pruebas que se añadió el mismo día
+tropieza con el mismo candado, y así debe ser.
+
+### De cara al cliente
+
+`POST /profesionales` con `usuario.rol_id` = el del administrador general
+responde **422** en `usuario.rol_id`, con «Ya hay un administrador general en
+este negocio». Nada queda creado: ni cuenta central, ni fila en el negocio, ni
+ficha de profesional.
+
+Vuestro formulario ya no lo ofrecía —asigna siempre el rol `profesional`— pero
+eso es interfaz, no autorización, y la distinción es la misma que hacemos con
+el menú: esconder una opción no cierra la puerta.
+
+### El apunte menor, que resultó no serlo tanto
+
+Cuando el alta de la cuenta fallaba **después** de crear la fila, la cuenta se
+quedaba. Al frontend le dejó seis huérfanas con el 500 de `invitacion_tokens`.
+
+No lo dejamos como está: **si la invitación falla, se deshace el alta entera.**
+El razonamiento es el que ellos dieron — el alta responde 500, el dueño cree
+que no se creó, lo reintenta y se come un «correo ya registrado» sin entender
+por qué, porque el email es único global y ya lo ocupa una fila que no ve.
+Compensando, el fallo es atómico y el reintento funciona. El botón de reenviar
+sigue cubriendo el caso común, que es que el correo salga y no llegue.
+
+### Y un comando para probar el panel de verdad
+
+`php artisan tenant:cuenta-de-prueba {tenant} --rol=profesional`
+
+Crea una cuenta con contraseña conocida (`secreta123` por defecto). Existe
+porque el alta normal manda una invitación y la contraseña la elige el
+empleado — que es lo correcto, y que hace imposible probar a mano lo que ve una
+recepcionista sin pasar por el correo.
+
+**Solo corre en `local`**, y **se niega a crear un administrador general**. Un
+atajo de desarrollo que se salta una regla de seguridad es exactamente como se
+cuelan.
+
+- **Estado**: hecho (2026-09-05). Tres tests nuevos, incluido el escenario
+  completo con un administrador local. Suite: 237 tests, 1068 aserciones.
+
+---
+
 ## [Sprint 3] Los permisos ya se aplican: middleware de capacidades
 
 Hasta hoy `roles.permisos` se guardaba y **no lo leía nadie**. Un profesional
