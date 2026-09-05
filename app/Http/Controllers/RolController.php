@@ -15,14 +15,14 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\ValidationException;
 
 /**
- * **Escribir** roles es solo del dueño. Leerlos, no.
+ * **Escribir** roles es solo del administrador general. Leerlos, no.
  *
  * Si un administrador pudiera crearlos, se haría uno con todo marcado y se lo
  * asignaría: escalada de privilegios en dos clics. Pero LEERLOS tiene que poder
  * cualquiera que abra el formulario de una cuenta, o el select de rol se queda
  * vacío. Y la lista no es un secreto dentro del negocio: es su organigrama.
  *
- * Se deja abierta a cualquier usuario del tenant, y no a `dueno|admin`, para no
+ * Se deja abierta a cualquier usuario del tenant, y no a los dos administradores, para no
  * inventar una SEGUNDA tabla de permisos al lado de la que ya existe: la regla
  * de este proyecto es preguntar por capacidades y nunca por el rol. Mientras esa
  * resolución no exista —deuda anotada—, un único candado por propiedad es más
@@ -40,12 +40,12 @@ class RolController extends Controller
                 $q->where('nombre', 'like', "%{$search}%");
             })
             /*
-             * Los de sistema arriba y en su orden (dueño, administrador,
+             * Los de sistema arriba y en su orden (general, local,
              * profesional), y los del negocio detrás por nombre. `sistema`
              * DESC no bastaba: entre los tres el orden lo decidiría el nombre,
              * y el negocio puede renombrarlos.
              */
-            ->orderByRaw("FIELD(clave, 'profesional', 'admin', 'dueno') DESC")
+            ->orderByRaw("FIELD(clave, 'profesional', 'admin_local', 'admin_general') DESC")
             ->orderBy('nombre')
             ->paginate($this->porPagina($request));
 
@@ -66,7 +66,7 @@ class RolController extends Controller
 
     public function store(RolRequest $request): JsonResponse
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         return RolResource::make($this->service->crear($request->validated()))
             ->response()
@@ -75,11 +75,11 @@ class RolController extends Controller
 
     public function update(RolRequest $request, Rol $rol): RolResource
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         if (! $rol->editable()) {
             throw ValidationException::withMessages([
-                'rol' => 'El rol del dueño no se puede editar.',
+                'rol' => 'El rol de administrador general no se puede editar.',
             ]);
         }
 
@@ -88,7 +88,7 @@ class RolController extends Controller
 
     public function destroy(Request $request, Rol $rol): JsonResponse
     {
-        $this->soloElDueno($request);
+        $this->soloElAdminGeneral($request);
 
         if (! $rol->borrable()) {
             throw ValidationException::withMessages([

@@ -26,7 +26,7 @@ class RolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()->rol === 'dueno';
+        return $this->user()->rol === 'admin_general';
     }
 
     public function rules(): array

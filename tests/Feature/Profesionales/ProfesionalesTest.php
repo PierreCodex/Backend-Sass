@@ -244,7 +244,7 @@ test('una cuenta sin ficha de profesional NO consume plaza', function () {
     $this->withToken($this->token)->postJson('/api/usuarios', [
         'nombre' => 'Lucía',
         'email' => 'recepcion@elrosal.pe',
-        'rol_id' => rolDe('admin'),
+        'rol_id' => rolDe('admin_local'),
     ])->assertCreated();
 
     $this->withToken($this->token)->getJson('/api/profesionales/resumen')
@@ -348,12 +348,12 @@ test('la foto se sube, se conserva sin reenviarla y se quita con su bandera', fu
         ->assertJsonPath('data.foto_url', null);
 });
 
-test('el dueño aparece en el listado si atiende', function () {
+test('el administrador general aparece en el listado si atiende', function () {
     $this->withToken($this->token)->getJson('/api/profesionales')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.nombre', 'María Quispe')
-        ->assertJsonPath('data.0.usuario.rol.clave', 'dueno');
+        ->assertJsonPath('data.0.usuario.rol.clave', 'admin_general');
 
     // Y su fila la creó el provisioning solo porque se registró como
     // `independiente`. Un negocio con equipo empieza sin profesionales.

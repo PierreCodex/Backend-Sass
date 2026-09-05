@@ -223,7 +223,7 @@ test('las categorías de otro negocio NO se ven ni se tocan: 404, nunca 403', fu
         'apellido' => 'Ramos',
         'email' => 'luis+'.$otro->id.'@correo.pe',
         'password' => 'secreta123',
-        'rol' => 'dueno',
+        'rol' => 'admin_general',
     ]);
 
     (new ProvisionTenantDatabase($otro))->handle();

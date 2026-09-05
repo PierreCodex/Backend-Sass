@@ -45,7 +45,7 @@ class Rol extends Model
     /** @return array<int, string> Las claves de los roles de sistema. */
     public static function clavesDeSistema(): array
     {
-        return ['dueno', 'admin', 'profesional'];
+        return ['admin_general', 'admin_local', 'profesional'];
     }
 
     /**
@@ -67,20 +67,20 @@ class Rol extends Model
     }
 
     /**
-     * El rol del dueño no se toca por ninguna vía.
+     * El rol de administrador general no se toca por ninguna vía.
      *
      * Quitarle un permiso lo dejaría fuera de su propia facturación, y
-     * dárselo a otro fabricaría un segundo superusuario. Cambiar de dueño es
+     * dárselo a otro fabricaría un segundo superusuario. Cambiar de titular es
      * una operación de soporte, no una casilla del formulario.
      */
-    public function esDueno(): bool
+    public function esAdminGeneral(): bool
     {
-        return $this->clave === 'dueno';
+        return $this->clave === 'admin_general';
     }
 
     public function editable(): bool
     {
-        return ! $this->esDueno();
+        return ! $this->esAdminGeneral();
     }
 
     /**
@@ -94,6 +94,6 @@ class Rol extends Model
 
     public function duplicable(): bool
     {
-        return ! $this->esDueno();
+        return ! $this->esAdminGeneral();
     }
 }

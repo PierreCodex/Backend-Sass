@@ -39,20 +39,37 @@ final class RolesSistema
                  * «Administrador general» y no «Dueño»: quien registra la
                  * cuenta no siempre es el propietario del negocio —en una
                  * clínica o un salón con socios suele ser la administradora—
-                 * y decirle «Dueño» en su panel seria falso. Esto describe lo
-                 * que hace, que es cierto siempre. La clave sigue siendo
-                 * `dueno`: es lo que reconoce el provisioning, las barandillas
-                 * de empleados y el control de facturacion.
+                 * y decirle «Dueño» en su panel sería falso. Esto describe lo
+                 * que hace, que es cierto siempre.
+                 *
+                 * Hay exactamente uno por negocio, lo crea el registro, no se
+                 * borra ni cambia de rol, y es el único que toca facturación,
+                 * configuración, cuentas y roles.
                  */
                 'nombre' => 'Administrador general',
-                'clave' => 'dueno',
+                'clave' => 'admin_general',
                 'sistema' => true,
                 'solo_propios' => false,
                 'permisos' => array_fill_keys(self::MODULOS, 'gestionar'),
             ],
             [
-                'nombre' => 'Administrador',
-                'clave' => 'admin',
+                /*
+                 * «Administrador local», no «Administrador» a secas: contra el
+                 * general no se distinguía por permisos —una fila, facturación—
+                 * y eso no es un rol distinto, es el mismo con un permiso
+                 * menos. Lo que de verdad los separa es el ALCANCE: uno manda
+                 * en la empresa, el otro en su sede.
+                 *
+                 * Por eso pierde `configuracion`: ahí viven el nombre del
+                 * negocio, el slug, la marca y el horario base — cosas de la
+                 * empresa, no de un local. Cuentas y roles ya eran del general.
+                 *
+                 * El alcance por sedes en sí llega con Locales (Sprint 3). En
+                 * un negocio de una sola sede el rol ya se lee bien: es el
+                 * encargado del local.
+                 */
+                'nombre' => 'Administrador local',
+                'clave' => 'admin_local',
                 'sistema' => true,
                 'solo_propios' => false,
                 'permisos' => [
@@ -67,9 +84,13 @@ final class RolesSistema
                     'locales' => 'gestionar',
                     'empleados' => 'gestionar',
                     'whatsapp' => 'gestionar',
-                    'configuracion' => 'gestionar',
-                    // La suscripción y el método de pago NO se delegan: es lo
-                    // único que separa al dueño de su mano derecha.
+                    /*
+                     * Ni configuración ni facturación. La primera es de la
+                     * empresa y no de una sede; la segunda no se delega —
+                     * cambiar de plan o dar de baja la suscripción es del
+                     * titular de la cuenta y de nadie más.
+                     */
+                    'configuracion' => null,
                     'facturacion' => null,
                     'soporte' => 'gestionar',
                 ],

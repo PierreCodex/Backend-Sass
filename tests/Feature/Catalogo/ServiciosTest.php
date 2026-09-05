@@ -305,7 +305,7 @@ test('los servicios de otro negocio: 404, nunca 403', function () {
         'apellido' => 'Ramos',
         'email' => 'luis+'.$otro->id.'@correo.pe',
         'password' => 'secreta123',
-        'rol' => 'dueno',
+        'rol' => 'admin_general',
     ]);
 
     (new ProvisionTenantDatabase($otro))->handle();
