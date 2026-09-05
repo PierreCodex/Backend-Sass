@@ -12,7 +12,9 @@ use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
+use App\Http\Controllers\GrupoController;
 use App\Http\Controllers\LocalController;
+use App\Http\Controllers\LocalProfesionalController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\ProfesionalController;
@@ -130,6 +132,18 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
             // se borra.
             Route::apiResource('locales', LocalController::class)
                 ->parameters(['locales' => 'local']);
+
+            /*
+             * Quien atiende en cada sede. Sin `store` ni `destroy`: el PUT hace
+             * `syncWithoutDetaching`, asi que asigna y edita a la vez, y para
+             * sacar a alguien se apaga `habilitado`.
+             */
+            Route::get('locales/{local}/profesionales', [LocalProfesionalController::class, 'index']);
+            Route::put('locales/{local}/profesionales/{profesional}', [LocalProfesionalController::class, 'update']);
+
+            // Agrupaciones de locales, profesionales y servicios. Hoy no las
+            // consulta nadie mas que su propia pantalla.
+            Route::apiResource('grupos', GrupoController::class);
 
             /*
              * Quien ENTRA al panel. Distinto de los profesionales: una

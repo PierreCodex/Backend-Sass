@@ -61,6 +61,14 @@ class Profesional extends Model
         return $this->usuario?->rol;
     }
 
+    /** Las sedes donde atiende, con sus datos propios de cada una. */
+    public function locales(): BelongsToMany
+    {
+        return $this->belongsToMany(Local::class, 'local_profesional')
+            ->withPivot(['habilitado', 'nombre_publico', 'perfil', 'horario_apertura', 'horario_cierre'])
+            ->withTimestamps();
+    }
+
     public function servicios(): BelongsToMany
     {
         return $this->belongsToMany(Servicio::class, 'servicio_profesional')->withTimestamps();
