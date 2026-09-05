@@ -2,7 +2,7 @@
 -- BD CENTRAL (landlord) — esquema real
 --
 -- GENERADO desde las migraciones — no editar a mano.
--- Última actualización: 2026-08-15
+-- Última actualización: 2026-09-04
 --
 -- Tenants, usuarios, planes, pagos, soporte, notificaciones, metricas e infraestructura de Laravel. Una sola base compartida por toda la plataforma.
 --
@@ -28,7 +28,7 @@ CREATE TABLE `anuncios` (
   PRIMARY KEY (`id`),
   KEY `anuncios_platform_admin_id_foreign` (`platform_admin_id`),
   CONSTRAINT `anuncios_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `business_categories`
 CREATE TABLE `business_categories` (
@@ -41,7 +41,7 @@ CREATE TABLE `business_categories` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `business_categories_slug_unique` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `cache`
 CREATE TABLE `cache` (
@@ -49,7 +49,7 @@ CREATE TABLE `cache` (
   `value` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL,
   `expiration` int NOT NULL,
   PRIMARY KEY (`key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `cache_locks`
 CREATE TABLE `cache_locks` (
@@ -57,7 +57,7 @@ CREATE TABLE `cache_locks` (
   `owner` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `expiration` int NOT NULL,
   PRIMARY KEY (`key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `domains`
 CREATE TABLE `domains` (
@@ -70,7 +70,7 @@ CREATE TABLE `domains` (
   UNIQUE KEY `domains_domain_unique` (`domain`),
   KEY `domains_tenant_id_foreign` (`tenant_id`),
   CONSTRAINT `domains_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `failed_jobs`
 CREATE TABLE `failed_jobs` (
@@ -83,7 +83,15 @@ CREATE TABLE `failed_jobs` (
   `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
+
+-- Tabla `invitacion_tokens`
+CREATE TABLE `invitacion_tokens` (
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `token` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`email`)
+);
 
 -- Tabla `job_batches`
 CREATE TABLE `job_batches` (
@@ -98,7 +106,7 @@ CREATE TABLE `job_batches` (
   `created_at` int NOT NULL,
   `finished_at` int DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `jobs`
 CREATE TABLE `jobs` (
@@ -111,7 +119,7 @@ CREATE TABLE `jobs` (
   `created_at` int unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `jobs_queue_index` (`queue`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `login_alertas`
 CREATE TABLE `login_alertas` (
@@ -130,7 +138,7 @@ CREATE TABLE `login_alertas` (
   KEY `login_alertas_platform_admin_id_foreign` (`platform_admin_id`),
   CONSTRAINT `login_alertas_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
   CONSTRAINT `login_alertas_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `migrations`
 CREATE TABLE `migrations` (
@@ -138,7 +146,7 @@ CREATE TABLE `migrations` (
   `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `batch` int NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `notificaciones`
 CREATE TABLE `notificaciones` (
@@ -157,7 +165,7 @@ CREATE TABLE `notificaciones` (
   KEY `notificaciones_user_id_leida_el_index` (`user_id`,`leida_el`),
   CONSTRAINT `notificaciones_platform_admin_id_foreign` FOREIGN KEY (`platform_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
   CONSTRAINT `notificaciones_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `pagos`
 CREATE TABLE `pagos` (
@@ -178,7 +186,7 @@ CREATE TABLE `pagos` (
   KEY `pagos_tenant_id_fecha_pago_index` (`tenant_id`,`fecha_pago`),
   CONSTRAINT `pagos_plan_id_foreign` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`),
   CONSTRAINT `pagos_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `password_reset_tokens`
 CREATE TABLE `password_reset_tokens` (
@@ -186,7 +194,7 @@ CREATE TABLE `password_reset_tokens` (
   `token` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `personal_access_tokens`
 CREATE TABLE `personal_access_tokens` (
@@ -204,7 +212,7 @@ CREATE TABLE `personal_access_tokens` (
   UNIQUE KEY `personal_access_tokens_token_unique` (`token`),
   KEY `personal_access_tokens_tokenable_type_tokenable_id_index` (`tokenable_type`,`tokenable_id`),
   KEY `personal_access_tokens_expires_at_index` (`expires_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `planes`
 CREATE TABLE `planes` (
@@ -230,7 +238,7 @@ CREATE TABLE `planes` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `planes_slug_unique` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `platform_admins`
 CREATE TABLE `platform_admins` (
@@ -247,7 +255,7 @@ CREATE TABLE `platform_admins` (
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `platform_admins_email_unique` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `soporte_acciones`
 CREATE TABLE `soporte_acciones` (
@@ -266,7 +274,7 @@ CREATE TABLE `soporte_acciones` (
   CONSTRAINT `soporte_acciones_soporte_admin_id_foreign` FOREIGN KEY (`soporte_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE CASCADE,
   CONSTRAINT `soporte_acciones_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
   CONSTRAINT `soporte_acciones_ticket_id_foreign` FOREIGN KEY (`ticket_id`) REFERENCES `soporte_tickets` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `soporte_tickets`
 CREATE TABLE `soporte_tickets` (
@@ -288,7 +296,7 @@ CREATE TABLE `soporte_tickets` (
   CONSTRAINT `soporte_tickets_soporte_admin_id_foreign` FOREIGN KEY (`soporte_admin_id`) REFERENCES `platform_admins` (`id`) ON DELETE SET NULL,
   CONSTRAINT `soporte_tickets_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
   CONSTRAINT `soporte_tickets_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `tenant_metricas_diarias`
 CREATE TABLE `tenant_metricas_diarias` (
@@ -305,7 +313,7 @@ CREATE TABLE `tenant_metricas_diarias` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `tenant_metricas_diarias_tenant_id_fecha_unique` (`tenant_id`,`fecha`),
   CONSTRAINT `tenant_metricas_diarias_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `tenants`
 CREATE TABLE `tenants` (
@@ -359,7 +367,7 @@ CREATE TABLE `tenants` (
   KEY `tenants_estado_suscripcion_vence_el_index` (`estado`,`suscripcion_vence_el`),
   CONSTRAINT `tenants_business_category_id_foreign` FOREIGN KEY (`business_category_id`) REFERENCES `business_categories` (`id`) ON DELETE SET NULL,
   CONSTRAINT `tenants_plan_id_foreign` FOREIGN KEY (`plan_id`) REFERENCES `planes` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `users`
 CREATE TABLE `users` (
@@ -373,6 +381,7 @@ CREATE TABLE `users` (
   `rol` enum('dueno','admin','profesional') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'profesional',
   `foto` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `telefono` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `documento` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `activo` tinyint(1) NOT NULL DEFAULT '1',
   `remember_token` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
@@ -382,4 +391,4 @@ CREATE TABLE `users` (
   UNIQUE KEY `users_email_unique` (`email`),
   KEY `users_tenant_id_index` (`tenant_id`),
   CONSTRAINT `users_tenant_id_foreign` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);

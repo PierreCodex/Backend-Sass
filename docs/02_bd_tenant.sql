@@ -2,7 +2,7 @@
 -- BD POR TENANT — esquema real
 --
 -- GENERADO desde las migraciones — no editar a mano.
--- Última actualización: 2026-08-15
+-- Última actualización: 2026-09-04
 --
 -- Una base por negocio (tenant_{id}). No existe negocio_id en ninguna tabla: la base ES el negocio. Creada por el job de provisioning al verificar el correo.
 --
@@ -29,7 +29,7 @@ CREATE TABLE `caja_cierres` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `caja_cierres_fecha_unique` (`fecha`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `caja_movimientos`
 CREATE TABLE `caja_movimientos` (
@@ -49,7 +49,7 @@ CREATE TABLE `caja_movimientos` (
   KEY `caja_movimientos_created_at_index` (`created_at`),
   CONSTRAINT `caja_movimientos_caja_cierre_id_foreign` FOREIGN KEY (`caja_cierre_id`) REFERENCES `caja_cierres` (`id`) ON DELETE SET NULL,
   CONSTRAINT `caja_movimientos_cita_id_foreign` FOREIGN KEY (`cita_id`) REFERENCES `citas` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `categoria_servicios`
 CREATE TABLE `categoria_servicios` (
@@ -64,7 +64,7 @@ CREATE TABLE `categoria_servicios` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `categoria_servicios_nombre_unique` (`nombre`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `cita_pagos`
 CREATE TABLE `cita_pagos` (
@@ -81,7 +81,7 @@ CREATE TABLE `cita_pagos` (
   PRIMARY KEY (`id`),
   KEY `cita_pagos_cita_id_created_at_index` (`cita_id`,`created_at`),
   CONSTRAINT `cita_pagos_cita_id_foreign` FOREIGN KEY (`cita_id`) REFERENCES `citas` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `cita_producto`
 CREATE TABLE `cita_producto` (
@@ -97,7 +97,7 @@ CREATE TABLE `cita_producto` (
   KEY `cita_producto_producto_id_foreign` (`producto_id`),
   CONSTRAINT `cita_producto_cita_id_foreign` FOREIGN KEY (`cita_id`) REFERENCES `citas` (`id`) ON DELETE CASCADE,
   CONSTRAINT `cita_producto_producto_id_foreign` FOREIGN KEY (`producto_id`) REFERENCES `productos` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `cita_servicio`
 CREATE TABLE `cita_servicio` (
@@ -114,7 +114,7 @@ CREATE TABLE `cita_servicio` (
   KEY `cita_servicio_servicio_id_foreign` (`servicio_id`),
   CONSTRAINT `cita_servicio_cita_id_foreign` FOREIGN KEY (`cita_id`) REFERENCES `citas` (`id`) ON DELETE CASCADE,
   CONSTRAINT `cita_servicio_servicio_id_foreign` FOREIGN KEY (`servicio_id`) REFERENCES `servicios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `citas`
 CREATE TABLE `citas` (
@@ -147,7 +147,7 @@ CREATE TABLE `citas` (
   CONSTRAINT `citas_local_id_foreign` FOREIGN KEY (`local_id`) REFERENCES `locales` (`id`) ON DELETE SET NULL,
   CONSTRAINT `citas_profesional_id_foreign` FOREIGN KEY (`profesional_id`) REFERENCES `profesionales` (`id`),
   CONSTRAINT `citas_horario_chk` CHECK ((`ends_at` > `starts_at`))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `clientes`
 CREATE TABLE `clientes` (
@@ -156,6 +156,7 @@ CREATE TABLE `clientes` (
   `nombre` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `apellido` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `telefono` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `telefono_normalizado` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `documento` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `fecha_nacimiento` date DEFAULT NULL,
@@ -164,10 +165,11 @@ CREATE TABLE `clientes` (
   `updated_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `clientes_telefono_normalizado_unique` (`telefono_normalizado`),
   KEY `clientes_telefono_index` (`telefono`),
   KEY `clientes_documento_index` (`documento`),
   KEY `clientes_email_index` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `grupo_local`
 CREATE TABLE `grupo_local` (
@@ -179,7 +181,7 @@ CREATE TABLE `grupo_local` (
   KEY `grupo_local_local_id_foreign` (`local_id`),
   CONSTRAINT `grupo_local_grupo_id_foreign` FOREIGN KEY (`grupo_id`) REFERENCES `grupos` (`id`) ON DELETE CASCADE,
   CONSTRAINT `grupo_local_local_id_foreign` FOREIGN KEY (`local_id`) REFERENCES `locales` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `grupo_profesional`
 CREATE TABLE `grupo_profesional` (
@@ -191,7 +193,7 @@ CREATE TABLE `grupo_profesional` (
   KEY `grupo_profesional_profesional_id_foreign` (`profesional_id`),
   CONSTRAINT `grupo_profesional_grupo_id_foreign` FOREIGN KEY (`grupo_id`) REFERENCES `grupos` (`id`) ON DELETE CASCADE,
   CONSTRAINT `grupo_profesional_profesional_id_foreign` FOREIGN KEY (`profesional_id`) REFERENCES `profesionales` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `grupo_servicio`
 CREATE TABLE `grupo_servicio` (
@@ -203,7 +205,7 @@ CREATE TABLE `grupo_servicio` (
   KEY `grupo_servicio_servicio_id_foreign` (`servicio_id`),
   CONSTRAINT `grupo_servicio_grupo_id_foreign` FOREIGN KEY (`grupo_id`) REFERENCES `grupos` (`id`) ON DELETE CASCADE,
   CONSTRAINT `grupo_servicio_servicio_id_foreign` FOREIGN KEY (`servicio_id`) REFERENCES `servicios` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `grupos`
 CREATE TABLE `grupos` (
@@ -215,7 +217,7 @@ CREATE TABLE `grupos` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `grupos_nombre_unique` (`nombre`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `inventario_movimientos`
 CREATE TABLE `inventario_movimientos` (
@@ -233,7 +235,7 @@ CREATE TABLE `inventario_movimientos` (
   KEY `inventario_movimientos_producto_id_created_at_index` (`producto_id`,`created_at`),
   CONSTRAINT `inventario_movimientos_cita_id_foreign` FOREIGN KEY (`cita_id`) REFERENCES `citas` (`id`) ON DELETE SET NULL,
   CONSTRAINT `inventario_movimientos_producto_id_foreign` FOREIGN KEY (`producto_id`) REFERENCES `productos` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `local_profesional`
 CREATE TABLE `local_profesional` (
@@ -252,7 +254,7 @@ CREATE TABLE `local_profesional` (
   KEY `local_profesional_profesional_id_foreign` (`profesional_id`),
   CONSTRAINT `local_profesional_local_id_foreign` FOREIGN KEY (`local_id`) REFERENCES `locales` (`id`) ON DELETE CASCADE,
   CONSTRAINT `local_profesional_profesional_id_foreign` FOREIGN KEY (`profesional_id`) REFERENCES `profesionales` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `locales`
 CREATE TABLE `locales` (
@@ -274,7 +276,7 @@ CREATE TABLE `locales` (
   `updated_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `migrations`
 CREATE TABLE `migrations` (
@@ -282,7 +284,7 @@ CREATE TABLE `migrations` (
   `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `batch` int NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `plantilla_whatsapps`
 CREATE TABLE `plantilla_whatsapps` (
@@ -295,7 +297,7 @@ CREATE TABLE `plantilla_whatsapps` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `plantilla_whatsapps_evento_unique` (`evento`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `productos`
 CREATE TABLE `productos` (
@@ -312,12 +314,12 @@ CREATE TABLE `productos` (
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `productos_nombre_unique` (`nombre`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `profesionales`
 CREATE TABLE `profesionales` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `central_user_id` bigint unsigned NOT NULL,
+  `usuario_id` bigint unsigned DEFAULT NULL,
   `nombre` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `cargo` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `foto` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -333,8 +335,25 @@ CREATE TABLE `profesionales` (
   `updated_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `profesionales_central_user_id_unique` (`central_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  UNIQUE KEY `profesionales_usuario_id_unique` (`usuario_id`),
+  CONSTRAINT `profesionales_usuario_id_foreign` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+);
+
+-- Tabla `roles`
+CREATE TABLE `roles` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `clave` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sistema` tinyint(1) NOT NULL DEFAULT '0',
+  `permisos` json NOT NULL,
+  `solo_propios` tinyint(1) NOT NULL DEFAULT '0',
+  `editado_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `roles_nombre_unique` (`nombre`),
+  UNIQUE KEY `roles_clave_unique` (`clave`)
+);
 
 -- Tabla `servicio_imagenes`
 CREATE TABLE `servicio_imagenes` (
@@ -347,7 +366,7 @@ CREATE TABLE `servicio_imagenes` (
   PRIMARY KEY (`id`),
   KEY `servicio_imagenes_servicio_id_foreign` (`servicio_id`),
   CONSTRAINT `servicio_imagenes_servicio_id_foreign` FOREIGN KEY (`servicio_id`) REFERENCES `servicios` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `servicio_profesional`
 CREATE TABLE `servicio_profesional` (
@@ -362,7 +381,7 @@ CREATE TABLE `servicio_profesional` (
   KEY `servicio_profesional_profesional_id_foreign` (`profesional_id`),
   CONSTRAINT `servicio_profesional_profesional_id_foreign` FOREIGN KEY (`profesional_id`) REFERENCES `profesionales` (`id`) ON DELETE CASCADE,
   CONSTRAINT `servicio_profesional_servicio_id_foreign` FOREIGN KEY (`servicio_id`) REFERENCES `servicios` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Tabla `servicios`
 CREATE TABLE `servicios` (
@@ -384,4 +403,17 @@ CREATE TABLE `servicios` (
   UNIQUE KEY `servicios_nombre_unique` (`nombre`),
   KEY `servicios_categoria_servicio_id_foreign` (`categoria_servicio_id`),
   CONSTRAINT `servicios_categoria_servicio_id_foreign` FOREIGN KEY (`categoria_servicio_id`) REFERENCES `categoria_servicios` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
+
+-- Tabla `usuarios`
+CREATE TABLE `usuarios` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `central_user_id` bigint unsigned NOT NULL,
+  `rol_id` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `usuarios_central_user_id_unique` (`central_user_id`),
+  KEY `usuarios_rol_id_foreign` (`rol_id`),
+  CONSTRAINT `usuarios_rol_id_foreign` FOREIGN KEY (`rol_id`) REFERENCES `roles` (`id`) ON DELETE RESTRICT
+);
