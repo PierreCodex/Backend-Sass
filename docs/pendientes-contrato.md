@@ -1591,3 +1591,62 @@ confirmación de que ese rol existe— antes que el 403.
 Es la tercera vez que una regla de seguridad duplicada nos muerde. La forma de
 la lección no cambia: **una regla, un sitio**; dos copias no son el doble de
 seguras, son dos cosas que se separan sin que nadie mire.
+
+---
+
+## [Sprint 3.B] Inventario: lo que cambia respecto a la ficha
+
+- **`PUT /inventario/{id}` ya existe.** Era el hueco que la ficha marcaba con
+  ⚠️ («hoy un producto no se puede editar, hay que borrarlo y crearlo»).
+  Mismas reglas que el `POST`, **menos `stock`**.
+
+- **`stock` no se acepta en el `update`, y no es que se ignore**: la regla no
+  está en el Form Request, así que la clave no llega a `validated()` y no hay
+  nada que un olvido posterior pueda dejar pasar. Mandarlo no da 422 — el
+  formulario de edición ya lo envía deshabilitado —, simplemente no cambia
+  nada. El stock se mueve con movimientos, que dejan quién y por qué; un PUT
+  que lo reescribiera sería un cambio de inventario sin autor.
+
+- **Una salida no puede dejar el stock en negativo → 422 en `cantidad`**, con
+  la recomendación de `vistas/inventario.md`. La app vieja restaba sin tope. Un
+  stock negativo no es un dato, es un error de captura contado como inventario,
+  y de ahí sale a la tienda pública y a los reportes. Dejarlo en **cero justo
+  sí pasa**: lo que no puede es pasarse. La maqueta ya avisaba de esto, así que
+  el mensaje del 422 y su aviso dicen lo mismo.
+
+- **`search` filtra por nombre Y descripción.** La ficha decía solo nombre; la
+  tabla de endpoints del contrato lista «nombre, descripción». Manda el
+  contrato. Y es `search` + `per_page`, no el `buscar` con página fija de 15 del
+  Laravel viejo: unificado con el resto de módulos.
+
+- **`motivo` admite 150 caracteres, no 255.** Es el ancho de la columna. Un
+  `max` más largo que la columna cambia un 422 legible por un 500 de MySQL.
+  **Conviene bajar el `maxLength` del campo en la maqueta.**
+
+- **`stock_minimo` puede omitirse**: ausente, queda en el 5 que promete el
+  contrato. El formulario lo manda siempre, pero un cliente que lo omitiera se
+  habría quedado con un umbral de 0, que significa «no avisar nunca».
+
+- **`precio_compra` se emite como 0 cuando la columna es NULL** (es nullable).
+  La columna «Compra» pasa el valor por `formatMoneda()` sin comprobarlo y un
+  null ahí pinta «S/ NaN».
+
+- **Borrar es soft delete**, y **recrear un producto borrado con el mismo
+  nombre restaura la fila pero nace limpio** — activo, con el stock y los
+  precios que se acaban de escribir. Para el negocio eso es un alta: rellenó un
+  formulario en blanco. Misma decisión que en Servicios.
+
+**Decisión de modelo que conviene conocer**: **el stock inicial también anota
+un movimiento** (`entrada`, motivo «Stock inicial»). No cambia ninguna
+respuesta del API. Sin él, un producto que nace con 24 unidades tiene un saldo
+que ninguna fila explica, y el día que se pinte el historial —la ampliación que
+la ficha deja pendiente— dirá que esas 24 aparecieron solas. El libro cuadra
+desde la primera línea.
+
+**Y `cantidad` se guarda siempre positiva**: el signo lo lleva `tipo`. Con
+signo, la columna significaría dos cosas según la fila y sumarla daría el saldo
+por accidente.
+
+- **Ref**: `InventarioController`, `InventarioService`, `ProductoResource`,
+  `app/Http/Requests/Inventario/`.
+- **Estado**: hecho (2026-09-06).
