@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Usuario;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Una cuenta con contraseña conocida para probar el panel de punta a punta.
@@ -78,16 +79,58 @@ class CuentaDePrueba extends Command
             return self::FAILURE;
         }
 
-        $central = DB::transaction(fn () => User::create([
-            'tenant_id' => $tenant->id,
-            'nombre' => 'Prueba',
-            'apellido' => ucfirst($clave),
-            'email' => $email,
-            'password' => $password,
-            'rol' => $clave === 'admin_local' ? 'admin_local' : 'profesional',
-            // Verificada de entrada: aquí no hay invitación que aceptar.
-            'email_verified_at' => now(),
-        ]));
+        /*
+         * `forceFill` y no `create()`: **`email_verified_at` no esta en
+         * `$fillable`, y eso es deliberado**. Marcarse el correo como
+         * verificado es justo lo que el correo de verificacion viene a
+         * impedir, asi que la columna no se escribe por asignacion masiva —
+         * la tocan `VerificacionCorreoController` y el alta por invitacion,
+         * los dos con `forceFill`, y los dos despues de comprobar algo.
+         *
+         * Aqui se daba por hecho que `create()` la escribiria. Eloquent la
+         * DESCARTABA EN SILENCIO: la fila salia con `NULL`, el comando
+         * imprimia «Cuenta lista» con las credenciales, y el login respondia
+         * «Verifica tu correo». El comando que existia para desbloquear las
+         * pruebas era el que las bloqueaba.
+         */
+        try {
+            $central = DB::transaction(function () use ($tenant, $clave, $email, $password) {
+                $user = new User;
+
+                $user->forceFill([
+                    'tenant_id' => $tenant->id,
+                    'nombre' => 'Prueba',
+                    'apellido' => ucfirst($clave),
+                    'email' => $email,
+                    'password' => $password,
+                    'rol' => $clave === 'admin_local' ? 'admin_local' : 'profesional',
+                    // Verificada de entrada: aquí no hay invitación que aceptar.
+                    'email_verified_at' => now(),
+                ])->save();
+
+                /*
+                 * Se comprueba contra la BASE y no contra el modelo en
+                 * memoria: es la unica comprobacion que habria cogido el
+                 * fallo de arriba, porque el modelo llevaba el valor puesto
+                 * y la fila no.
+                 *
+                 * Y va DENTRO de la transaccion para que el fallo no deje
+                 * una cuenta huerfana ocupando ese correo — `users.email` es
+                 * unico en toda la plataforma, asi que la fila muerta
+                 * impediria reintentar con el mismo. Es la misma leccion del
+                 * alta con invitacion.
+                 */
+                if ($user->fresh()->email_verified_at === null) {
+                    throw new RuntimeException('La cuenta quedaria SIN verificar y no podria iniciar sesion. No se ha creado nada.');
+                }
+
+                return $user;
+            });
+        } catch (RuntimeException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
 
         $tenant->run(fn () => Usuario::create([
             'central_user_id' => $central->id,

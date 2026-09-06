@@ -266,9 +266,19 @@ test('quien no es administrador general lee los roles, pero no los toca', functi
     $id = $this->tenant->run(fn () => Rol::where('clave', 'admin_local')->value('id'));
     $this->withToken($token)->getJson("/api/roles/{$id}")->assertOk();
 
-    $this->withToken($token)->postJson('/api/roles', rolValido())->assertForbidden();
-    $this->withToken($token)->putJson("/api/roles/{$id}", rolValido())->assertForbidden();
-    $this->withToken($token)->deleteJson("/api/roles/{$id}")->assertForbidden();
+    /*
+     * Las tres con `codigo`, y las tres a proposito: el `authorize()` del
+     * FormRequest corta el POST y el PUT antes de validar, y el DELETE lo para
+     * el controlador. Son los dos guardias, y hasta hoy solo uno de ellos
+     * llevaba `codigo` — el que no salta primero.
+     */
+    foreach ([
+        fn () => $this->withToken($token)->postJson('/api/roles', rolValido()),
+        fn () => $this->withToken($token)->putJson("/api/roles/{$id}", rolValido()),
+        fn () => $this->withToken($token)->deleteJson("/api/roles/{$id}"),
+    ] as $llamada) {
+        $llamada()->assertForbidden()->assertJsonPath('codigo', 'sin_permiso');
+    }
 });
 
 test('un rol de otro negocio responde 404, no 403', function () {

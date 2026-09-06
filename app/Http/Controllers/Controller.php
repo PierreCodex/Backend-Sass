@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Rango;
 use Illuminate\Http\Request;
 
 abstract class Controller
@@ -34,19 +35,18 @@ abstract class Controller
      * Gestionar roles y cuentas es solo del administrador general.
      *
      * Quien puede crear cuentas y repartir roles puede fabricarse un segundo
-     * administrador general: se hace un rol con todo marcado y se lo asigna. Por eso el preset
-     * de Administrador trae `empleados: gestionar` y aun asi esto se comprueba
-     * aparte — dar de alta gente y decidir que puede hacer la gente son
-     * permisos distintos.
+     * administrador general: se hace un rol con todo marcado y se lo asigna.
+     * Por eso el preset de Administrador local trae `empleados: gestionar` y
+     * aun asi esto se comprueba aparte — dar de alta gente y decidir que puede
+     * hacer la gente son permisos distintos.
      *
-     * 403 y no 404: el recurso existe y es del negocio de quien pregunta; lo
-     * que falta es rango. El 404 se reserva para lo que es de otro tenant.
+     * La regla en si vive en `Rango`, que es el unico sitio donde esta escrita:
+     * el `authorize()` de `RolRequest` la necesita ANTES de validar y este
+     * atajo la necesita dentro de la accion.
      */
     protected function soloElAdminGeneral(Request $request): void
     {
-        if ($request->user()->rol !== 'admin_general') {
-            abort(403, 'Solo el administrador general puede hacer esto.');
-        }
+        Rango::soloElAdminGeneral($request->user());
     }
 
     /**
