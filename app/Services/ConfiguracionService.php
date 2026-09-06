@@ -85,18 +85,49 @@ class ConfiguracionService
 
         $tenant->configuracion = $this->armarJson($tenant, $datos);
 
+        $this->fijarSlugSiHaceFalta($tenant, $datos);
+
         $tenant->save();
 
         /*
-         * Hook de onboarding: informar el horario del negocio marca el paso.
-         * Va después del `save()` a propósito — si la escritura falla, el paso
-         * no se da por hecho.
+         * Hooks de onboarding, después del `save()` a propósito: si la
+         * escritura falla, ningún paso se da por hecho.
          */
         if ($this->traeHorario($datos)) {
             $this->onboarding->marcar($tenant, 'horario_local');
         }
 
+        if ($tenant->wasChanged('slug')) {
+            $this->onboarding->marcar($tenant, 'nombre_negocio');
+        }
+
         return $tenant;
+    }
+
+    /**
+     * El nombre se puede fijar desde DOS sitios, y los dos tienen que derivar
+     * el slug.
+     *
+     * El paso 1 del onboarding lo hacía; esta pantalla, no — solo escribía la
+     * columna. Un negocio que se ponía el nombre desde aquí quedaba con nombre
+     * y **sin enlace**, y su tienda pública respondía 404 para siempre sin que
+     * nada lo dijera. El checklist seguía pidiendo el paso 1 aunque el nombre
+     * ya estuviera puesto, que era la única pista.
+     *
+     * La regla: la PRIMERA vez que hay nombre, venga de donde venga, se deriva
+     * el slug y se marca el paso. Después, renombrar cambia solo el nombre —
+     * el slug queda fijo, que es justo el motivo de haberlos desacoplado: forma
+     * el enlace que el negocio ya repartió por WhatsApp.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function fijarSlugSiHaceFalta(Tenant $tenant, array $datos): void
+    {
+        if ($tenant->slug !== null || ($datos['nombre'] ?? null) === null) {
+            return;
+        }
+
+        $tenant->slug = $this->onboarding->derivarSlug($datos['nombre']);
     }
 
     /**
