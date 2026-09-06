@@ -8,12 +8,13 @@ use App\Http\Controllers\Auth\InvitacionController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\RegistroController;
 use App\Http\Controllers\Auth\VerificacionCorreoController;
+use App\Http\Controllers\CapacidadesController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
-use App\Http\Controllers\CapacidadesController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\GrupoController;
+use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\LocalController;
 use App\Http\Controllers\LocalProfesionalController;
 use App\Http\Controllers\OnboardingController;
@@ -224,6 +225,27 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
                 Route::post('profesionales', [ProfesionalController::class, 'store']);
                 Route::match(['put', 'patch'], 'profesionales/{profesional}', [ProfesionalController::class, 'update']);
                 Route::delete('profesionales/{profesional}', [ProfesionalController::class, 'destroy']);
+            });
+
+            // Productos y su stock. La ruta es `inventario` y el parametro
+            // `producto`: el modulo se llama como la pantalla, la entidad como
+            // lo que es.
+            Route::middleware('puede:inventario')->group(function () {
+                Route::get('inventario', [InventarioController::class, 'index']);
+                Route::get('inventario/{producto}', [InventarioController::class, 'show']);
+            });
+
+            Route::middleware('puede:inventario,gestionar')->group(function () {
+                Route::post('inventario', [InventarioController::class, 'store']);
+                Route::match(['put', 'patch'], 'inventario/{producto}', [InventarioController::class, 'update']);
+                Route::delete('inventario/{producto}', [InventarioController::class, 'destroy']);
+
+                /*
+                 * Mover stock es GESTIONAR, no ver: es la escritura de verdad
+                 * del modulo. El CRUD cambia como se llama y cuanto cuesta un
+                 * producto; esto cambia cuantos hay.
+                 */
+                Route::post('inventario/{producto}/movimiento', [InventarioController::class, 'movimiento']);
             });
         });
 
