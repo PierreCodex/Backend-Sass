@@ -143,6 +143,52 @@ test('el reparto: unas cosas a columnas y otras al JSON', function () {
 });
 
 /*
+ * El nombre se puede fijar desde DOS sitios y los dos tienen que derivar el
+ * slug.
+ *
+ * El paso 1 del onboarding lo hacía; esta pantalla no — solo escribía la
+ * columna. Un negocio que se ponía el nombre desde aquí quedaba con nombre y
+ * SIN ENLACE, y su tienda pública respondía 404 para siempre sin que nada lo
+ * dijera. Le pasó al tenant de desarrollo.
+ */
+test('poner el nombre desde aquí también deriva el slug y marca el paso', function () {
+    expect($this->tenant->slug)->toBeNull();
+
+    enviarConfiguracion($this, ['nombre' => 'Clínica El Rosal'])
+        ->assertOk()
+        ->assertJsonPath('data.slug', 'clinica-el-rosal');
+
+    $paso = collect($this->withToken($this->token)->getJson('/api/onboarding')->json('data.pasos'))
+        ->firstWhere('clave', 'nombre_negocio')['completado'];
+
+    expect($paso)->toBeTrue();
+});
+
+/*
+ * Renombrar cambia el nombre y NO el slug. Es el motivo de haberlos
+ * desacoplado: el slug forma el enlace que el negocio ya repartió por WhatsApp,
+ * y moverlo lo deja muerto.
+ */
+test('renombrar después no mueve el slug', function () {
+    enviarConfiguracion($this, ['nombre' => 'Clínica El Rosal'])->assertOk();
+
+    enviarConfiguracion($this, ['nombre' => 'Clínica El Rosal SAC'])
+        ->assertOk()
+        ->assertJsonPath('data.nombre', 'Clínica El Rosal SAC')
+        ->assertJsonPath('data.slug', 'clinica-el-rosal');
+});
+
+/*
+ * Los dos caminos derivan el MISMO slug, incluida la lista de subdominios
+ * reservados y el sufijo por colisión: comparten el derivador.
+ */
+test('el slug esquiva los subdominios reservados venga de donde venga', function () {
+    enviarConfiguracion($this, ['nombre' => 'Admin'])
+        ->assertOk()
+        ->assertJsonPath('data.slug', 'admin-2');
+});
+
+/*
  * El slug forma el subdominio público: cambiarlo dejaría muerto cada enlace
  * que el negocio haya repartido. Lo fija el paso 1 del onboarding y se acabó.
  */

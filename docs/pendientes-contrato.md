@@ -1491,3 +1491,37 @@ no una restauración: rellenó un formulario en blanco.
 - **Ref**: `app/Console/Commands/MigrarTenantsProvisionados.php`,
   `plan-sprints.md` §4 (ritual de cierre de sprint).
 - **Estado**: hecho (2026-08-28).
+
+---
+
+## [Configuración] `PUT /configuracion` con `nombre` ahora fija el slug y marca el paso 1
+
+- **Qué cambia**: enviar `nombre` en `PUT /configuracion` cuando el negocio
+  **aún no tiene slug** hace dos cosas más que antes:
+  1. deriva `slug` y lo devuelve ya poblado en la respuesta (`data.slug`);
+  2. marca el paso `nombre_negocio` del onboarding, así que el checklist de
+     `GET /onboarding` cambia en la misma petición.
+
+  Renombrar después **no** mueve el slug: cambia solo `data.nombre`. El slug
+  se fija una vez y se queda.
+
+- **Por qué**: hay DOS caminos que escriben el nombre del negocio —
+  `POST /onboarding/nombre` y esta pantalla— y solo el primero derivaba el
+  slug. Un negocio que se ponía el nombre desde Configuración quedaba con
+  nombre y **sin enlace**: su tienda pública respondía 404 para siempre y el
+  checklist seguía pidiendo el paso 1 sin decir por qué. Le pasó al tenant de
+  desarrollo (`3brlcaps`), que estuvo con `nombre` puesto y `slug NULL`.
+
+  La regla de negocio no cambia, se completa: **la primera vez que hay
+  nombre, venga de donde venga, nace el slug**. Es la misma razón por la que
+  la seguridad vive en el service — un invariante en un solo camino es un
+  invariante a medias.
+
+- **Para el frontend**: si la pantalla de Configuración deja poner el nombre
+  antes de que el checklist esté completo, refrescar el onboarding tras
+  guardar; el paso 1 puede haberse marcado solo. No hace falta llamar a
+  `POST /onboarding/nombre` desde ahí.
+
+- **Ref**: `ConfiguracionService::fijarSlugSiHaceFalta()`,
+  `OnboardingService::derivarSlug()` (ahora público).
+- **Estado**: hecho (2026-09-06).

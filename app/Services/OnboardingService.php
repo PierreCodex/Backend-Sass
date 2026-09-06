@@ -99,7 +99,14 @@ class OnboardingService
         return $tenant->refresh();
     }
 
-    private function derivarSlug(string $nombre): string
+    /**
+     * De «Clínica El Rosal» a `clinica-el-rosal`.
+     *
+     * Público porque hay DOS caminos que fijan el nombre —el paso 1 del
+     * onboarding y `PUT /configuracion`— y los dos tienen que derivar el mismo
+     * slug. Tenerlo privado fue lo que dejó negocios con nombre y sin enlace.
+     */
+    public function derivarSlug(string $nombre): string
     {
         $base = Str::slug($nombre);
 
