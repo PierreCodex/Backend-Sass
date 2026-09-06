@@ -1650,3 +1650,56 @@ por accidente.
 - **Ref**: `InventarioController`, `InventarioService`, `ProductoResource`,
   `app/Http/Requests/Inventario/`.
 - **Estado**: hecho (2026-09-06).
+
+---
+
+## [Sprint 4.A] El motor de disponibilidad: un solo cálculo para los dos lados
+
+- **Qué es**: `App\Services\Disponibilidad`, con dos métodos —
+  `jornada($profesional, $fecha)` y
+  `huecos($profesional, $fecha, $duracionMin, $exceptoCita = null)`.
+  **Todavía no tiene endpoint**: lo consumirán Citas (4.B) para validar y la
+  tienda pública (5.A) para ofrecer horarios.
+
+- **Por qué va antes que Citas**: en el backend anterior este cálculo existía
+  solo en la reserva pública, y por eso desde el panel se podían crear citas
+  solapadas. Dos respuestas distintas a la misma pregunta, y la que mandaba
+  dependía de por dónde entrara la petición.
+
+- **Reproduce `features/calendario/disponibilidad.ts` a propósito**, incluida
+  la precedencia de cinco niveles y los bordes. Mientras las dos existan tienen
+  que dar exactamente lo mismo, o el selector ofrecerá horas que el backend
+  rechaza con un 422. **Si esa lógica cambia en el cliente, avisad**: son dos
+  copias de una misma regla y ya sabemos cómo acaba eso.
+
+- **El caso dorado de `vistas/citas.md` está como test**, y pasa exacto: Rosa
+  Paredes 09:00–18:00 con break 13:00–14:00 da **27 huecos de 15 min** (09:00 a
+  17:45) y **las 9 opciones de 45 min**, con 10:15 y 15:30 entre ellas.
+
+  **Dato para la ficha**: las dos citas del ejemplo no estaban escritas, así que
+  las reconstruí desde los dos listados. Son **10:00–10:15 y 14:30–15:30** — las
+  únicas que producen a la vez los 27 y los 9. Conviene anotarlas ahí, porque
+  sin ellas el ejemplo no se puede volver a comprobar.
+
+**Dos decisiones que la especificación no cerraba:**
+
+1. **`no_asistio` NO libera su hueco; solo `cancelada` lo hace.** El contrato
+   dice «excluyendo las canceladas» y me atengo a eso. Un no-show ocupó ese
+   rato igual que cualquier otra cita —el profesional estuvo esperando—, y
+   liberarlo reescribiría el pasado y los reportes que salgan de él.
+
+2. **Una excepción disponible no arrastra los breaks del día habitual.** Es un
+   turno distinto —medio turno, refuerzo, cubrir a un compañero—, y sus
+   descansos habrían sido otros. Reemplaza entero, que es lo que dice el
+   contrato del nivel 2.
+
+**Detalle de implementación que conviene no perder**: el motor lee la COLUMNA
+`profesionales.horario`, no lo que emite `ProfesionalResource`. El Resource
+rellena siempre los siete días para que el formulario tenga siete tarjetas, y
+los que faltan salen con `activo: false`; resolver la jornada sobre eso
+convertiría «no tiene horario propio» en «tiene horario y no trabaja ningún
+día» — y el nivel 5 al revés deja al profesional nuevo sin agenda para siempre.
+
+- **Ref**: `app/Services/Disponibilidad.php`, `app/Support/Jornada.php`,
+  `tests/Feature/Agenda/DisponibilidadTest.php`.
+- **Estado**: hecho (2026-09-06).
