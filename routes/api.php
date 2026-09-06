@@ -11,6 +11,7 @@ use App\Http\Controllers\Auth\VerificacionCorreoController;
 use App\Http\Controllers\CapacidadesController;
 use App\Http\Controllers\Catalogo\CategoriaServicioController;
 use App\Http\Controllers\Catalogo\ServicioController;
+use App\Http\Controllers\CitaController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\GrupoController;
@@ -225,6 +226,22 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
                 Route::post('profesionales', [ProfesionalController::class, 'store']);
                 Route::match(['put', 'patch'], 'profesionales/{profesional}', [ProfesionalController::class, 'update']);
                 Route::delete('profesionales/{profesional}', [ProfesionalController::class, 'destroy']);
+            });
+
+            /*
+             * Las citas. `solo_propios` empieza a significar algo aqui: hasta
+             * ahora se guardaba en el rol y no filtraba nada, porque no habia
+             * nada suyo que filtrar.
+             */
+            Route::middleware('puede:citas')->group(function () {
+                Route::get('citas', [CitaController::class, 'index']);
+                Route::get('citas/{cita}', [CitaController::class, 'show']);
+            });
+
+            Route::middleware('puede:citas,gestionar')->group(function () {
+                Route::post('citas', [CitaController::class, 'store']);
+                Route::match(['put', 'patch'], 'citas/{cita}', [CitaController::class, 'update']);
+                Route::delete('citas/{cita}', [CitaController::class, 'destroy']);
             });
 
             // Productos y su stock. La ruta es `inventario` y el parametro
