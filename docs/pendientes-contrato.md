@@ -1703,3 +1703,80 @@ día» — y el nivel 5 al revés deja al profesional nuevo sin agenda para siem
 - **Ref**: `app/Services/Disponibilidad.php`, `app/Support/Jornada.php`,
   `tests/Feature/Agenda/DisponibilidadTest.php`.
 - **Estado**: hecho (2026-09-06).
+
+---
+
+## [Sprint 4.B] Citas: lo que el contrato tiene que absorber
+
+**Tres cambios que el plan ya pedía al frontend, y que el backend ya emite:**
+
+1. **`servicios[]` junto a `servicio`** (§2.4). No existe `citas.servicio_id`:
+   los servicios viven en `cita_servicio`. El panel manda uno y se inserta una
+   línea, pero la tienda pública encadenará varios en el Sprint 5. `servicio`
+   sigue saliendo —el primero— **como puente**, y `servicios[]` completo al
+   lado. Migrad al array cuando podáis; el día que una cita traiga tres, el
+   singular enseñará una cita a medias sin decirlo.
+
+2. **Los seis estados** (§2.5): `pendiente|confirmada|en_curso|completada|
+   cancelada|no_asistio`. **No se recortan a cuatro.** Discrepancias contemplaba
+   clamparlos hasta que el union del frontend creciera, pero recortar significa
+   mentir sobre el estado real de una cita — y el propio contrato los necesita:
+   su bloque de inasistencias es imposible sin `no_asistio`. Ampliad el union y
+   ponedles etiqueta y color.
+
+3. **`local_id`** viaja en la entidad y se acepta en el payload. Con una sola
+   sede lo pone el backend (la principal, §2.12); con varias, hace falta el
+   selector.
+
+**Campo nuevo que no estaba en el contrato**: **`monto_total`**. `monto` es la
+suma de las líneas de SERVICIO —lo que el campo editable reescribe (§2.6)— y
+`monto_total` incluye además los productos. Si `monto` trajera el total, el
+panel lo reenviaría al guardar y subiría el precio del servicio con el importe
+de lo vendido. Para mostrar «lo que se cobra», usad `monto_total`.
+
+**Decisiones que la especificación dejaba abiertas:**
+
+- **Cliente sin teléfono → ficha nueva, aunque el nombre se repita.** Con
+  teléfono se reutiliza la ficha (y se restaura si estaba borrada), que es el
+  mismo criterio de la reserva pública. Sin teléfono no hay con qué reconocer a
+  nadie: fusionar por nombre juntaría a dos «María» distintas, y separar dos
+  historiales mezclados es mucho peor que tener dos fichas repetidas.
+
+- **El stock baja al COMPLETAR, no al agendar.** Reservar dos ceras para el
+  jueves no las quita del estante hoy. Genera un movimiento `venta` con
+  `cita_id` (§2.8).
+
+- **Y deshacer el completado devuelve el stock**, anotando una `entrada` de
+  devolución en vez de borrar la venta: el libro no se reescribe. Ir y venir
+  entre estados no descuenta dos veces. Marcar «completada» por error y
+  corregirlo no puede dejar el inventario descontado para siempre.
+
+- **La venta NO tiene el tope de stock que sí tiene el endpoint manual**, y es
+  deliberado. Una salida a mano es alguien tecleando un número: si se pasa, es
+  un error que conviene atajar. Una venta ya ocurrió —el producto salió del
+  estante—, y negarse a registrarla dejaría la cita sin poder cerrarse por un
+  dato de inventario que ya estaba mal. El saldo negativo es ahí el síntoma, no
+  la causa.
+
+- **`DELETE` borra de verdad** (`citas` no lleva soft delete y las líneas caen
+  en cascada). Cancelar es un ESTADO, y es lo que conserva el historial; borrar
+  es para lo que nunca debió existir. Si estaba completada, su stock vuelve
+  antes.
+
+**Y `solo_propios` ya filtra.** Llevaba desde el Sprint 2 guardándose sin hacer
+nada porque no había citas que filtrar. Ahora: el listado devuelve solo las
+suyas y la de otro responde **404**, no 403 — para esa persona esa cita no
+existe, igual que una sede fuera de su alcance. Quien tiene `solo_propios` y no
+tiene ficha de profesional no ve ninguna: quien no atiende no tiene citas
+propias.
+
+**Sobre el anti-solape, con honestidad**: hay transacción y
+`SELECT … FOR UPDATE` sobre las citas del profesional de ese día antes de
+calcular nada, apoyado en el índice `(profesional_id, starts_at)` para que el
+rango tome también los huecos entre filas. **Lo que los tests prueban es el caso
+secuencial** —la segunda reserva sobre la misma hora recibe 422—, no la carrera
+real de dos peticiones simultáneas, que no se puede reproducir en la suite.
+
+- **Ref**: `CitaService`, `CitaController`, `CitaResource`,
+  `app/Http/Requests/Citas/`.
+- **Estado**: hecho (2026-09-06).
