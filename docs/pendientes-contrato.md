@@ -1525,3 +1525,69 @@ no una restauración: rellenó un formulario en blanco.
 - **Ref**: `ConfiguracionService::fijarSlugSiHaceFalta()`,
   `OnboardingService::derivarSlug()` (ahora público).
 - **Estado**: hecho (2026-09-06).
+
+---
+
+## [Permisos] Los 403 de rango ya traen `codigo: sin_permiso`
+
+- **Qué cambia**: los 403 de `/usuarios` y `/roles` —los que salen del guardia
+  de rango, no del middleware de capacidades— pasan de
+  `{"message": "..."}` a `{"message": "...", "codigo": "sin_permiso"}`.
+  El mensaje no cambia.
+
+- **Por qué**: era el único 403 del panel sin `codigo`, así que el cliente
+  tenía que tratar «cualquier 403 es falta de permiso» para distinguirlo de la
+  pared de cobro (`suscripcion_vencida`). Es cierto hoy y falso el día que
+  aparezca un tercer 403; y la suposición vivía en el cliente, que es donde
+  peor se ve.
+
+- **Por qué `sin_permiso` y no un código propio** (`solo_admin_general`, que
+  también se propuso): para quien recibe la respuesta esto **es** falta de
+  permiso, y el matiz de que sea por rango y no por la matriz ya lo cuenta el
+  `message`. Un código por cada guardia obliga al cliente a conocer nuestra
+  estructura interna para acabar pintando el mismo aviso. `codigo` responde
+  «¿qué le digo al usuario?»; `message`, «qué le pasó exactamente».
+
+- **Ref**: `Controller::soloElAdminGeneral()`.
+- **Estado**: hecho (2026-09-06).
+
+---
+
+## [Operación] `tenant:cuenta-de-prueba` entregaba cuentas que no podían entrar
+
+- **Qué**: el comando escribía `email_verified_at` con `User::create()`, y esa
+  columna está **fuera de `$fillable` a propósito**, así que Eloquent la
+  descartaba en silencio. La fila quedaba con `NULL`, el comando imprimía
+  «Cuenta lista» con las credenciales, y el login respondía «Verifica tu
+  correo». El comando que existía para desbloquear las pruebas con cuenta
+  restringida era el que las bloqueaba.
+
+- **El arreglo NO fue añadirla a `$fillable`**, que era la salida corta:
+  marcarse el correo como verificado es justo lo que el correo de verificación
+  viene a impedir, y meterlo en `$fillable` lo deja al alcance de cualquier
+  camino de asignación masiva, hoy o dentro de seis meses. Se usa `forceFill`,
+  igual que `VerificacionCorreoController` y el alta por invitación — los dos
+  sitios que ya tocaban esa columna, y los dos después de comprobar algo.
+
+- **Y el comando ya no canta victoria a ciegas**: relee la fila **de la base**
+  y falla si no quedó verificada. Va dentro de la transacción, así que el
+  fallo no deja una cuenta huérfana ocupando el correo — `users.email` es
+  único global, y esa fila muerta impediría reintentar con el mismo.
+
+- **Ref**: `app/Console/Commands/CuentaDePrueba.php`,
+  `tests/Feature/CuentaDePruebaTest.php`.
+- **Estado**: hecho (2026-09-06).
+
+**Nota de implementación, sin cambio de forma**: la regla «esto es solo del
+administrador general» estaba escrita **dos veces** —en `RolRequest::authorize()`
+y en `Controller::soloElAdminGeneral()`— y por eso divergió: la del controlador
+llevaba `codigo` y la del FormRequest no, y como el FormRequest salta primero,
+el `codigo` no llegaba nunca en `POST`/`PUT /roles`. Ahora vive en
+`App\Support\Rango` y los dos guardias la llaman. Los dos siguen existiendo a
+propósito: el del FormRequest corta **antes de validar**, y sin él quien no es
+administrador general recibiría el 422 del nombre repetido —y con él la
+confirmación de que ese rol existe— antes que el 403.
+
+Es la tercera vez que una regla de seguridad duplicada nos muerde. La forma de
+la lección no cambia: **una regla, un sitio**; dos copias no son el doble de
+seguras, son dos cosas que se separan sin que nadie mire.

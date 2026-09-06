@@ -317,7 +317,15 @@ test('quien no es administrador general no gestiona cuentas', function () {
     ]);
     $token = $admin->createToken('test')->plainTextToken;
 
-    $this->withToken($token)->getJson('/api/usuarios')->assertForbidden();
+    /*
+     * Con `codigo`, como cualquier otro 403 del panel: sin el, el cliente
+     * tenia que tratar «cualquier 403 es falta de permiso» para distinguirlo
+     * de la pared de cobro, que se parece y se arregla pagando.
+     */
+    $this->withToken($token)->getJson('/api/usuarios')
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso');
+
     $this->withToken($token)->postJson('/api/usuarios', cuentaValida())->assertForbidden();
 });
 
