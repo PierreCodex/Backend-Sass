@@ -116,7 +116,14 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   «solo un administrador general» estaba en `UsuarioController`, y el alta de
   cuenta desde `/profesionales` entraba por debajo — un administrador local se
   ascendía en dos peticiones. Y nunca dos copias de la misma regla: la que se
-  olvida es la que no se prueba
+  olvida es la que no se prueba.
+
+  **Pasó TRES veces en una semana.** La tercera (2026-09-06) fue la misma regla
+  escrita en `RolRequest::authorize()` y en el controlador: divergieron, y solo
+  una llevaba el `codigo` del 403. Por eso el rango vive ahora en
+  **`App\Support\Rango`**, un único sitio que los dos guardias llaman. Que haya
+  dos PUNTOS DE LLAMADA está bien —el del Form Request corta antes de validar—;
+  lo que no puede haber es dos copias de la regla
 - **Los permisos se aplican con el middleware `puede:modulo,nivel`** (desde el
   2026-09-05). Se pregunta por CAPACIDAD y nunca por rol: es lo que deja que el
   negocio invente sus propios roles sin tocar un endpoint. `gestionar` incluye
@@ -141,6 +148,14 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   él el slug — lo fija el paso 1 del onboarding.
 - **La tienda pública responde 404** mientras el paso 1 del onboarding no
   haya fijado el nombre/slug (el slug temporal jamás circula).
+- **El slug nace la PRIMERA vez que hay nombre, venga por donde venga**
+  (2026-09-06). Hay dos caminos que escriben `tenants.nombre` —el paso 1 del
+  onboarding y `PUT /configuracion`— y solo el primero derivaba el slug: un
+  negocio que se ponía el nombre desde Configuración quedaba con nombre y **sin
+  enlace**, con la tienda pública en 404 para siempre y sin nada que lo dijera.
+  Renombrar después mueve solo el nombre: el slug queda fijo, porque forma el
+  enlace que el negocio ya repartió. `OnboardingService::derivarSlug()` es de
+  los dos caminos.
 - **Pagos QR sin pasarela**: el tenant sube su QR de Yape/Plin y sus
   instrucciones (columnas en `tenants`, BD central, porque la tienda pública
   las necesita sin tocar la BD del tenant). El cliente sube comprobante, el
@@ -155,6 +170,33 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 - **Horario de locales**: el JSON es la fuente de verdad (permite "sábado
   hasta la 1, domingo cerrado"); el Resource deriva las columnas planas que
   pide el contrato.
+- **El stock solo se mueve con MOVIMIENTOS** (Sprint 3.B). `productos.stock` es
+  un saldo materializado y `inventario_movimientos` el porqué; nunca se escribe
+  uno sin el otro, y el stock inicial anota su propia entrada para que el libro
+  cuadre desde la primera línea. `PUT /inventario/{id}` **no acepta `stock`** —
+  la clave no está en las reglas del Form Request, así que no llega a
+  `validated()`. Una salida a mano **no puede dejar el saldo en negativo** (422);
+  una **venta de cita sí**, y es deliberado: la salida a mano es alguien
+  tecleando un número, la venta ya ocurrió y negarse a registrarla dejaría la
+  cita sin cerrar por un inventario que ya estaba mal.
+- **La disponibilidad se calcula en UN solo sitio**: `App\Services\Disponibilidad`
+  (Sprint 4.A), para el panel y para la tienda. En el backend anterior vivía solo
+  en la reserva pública y por eso desde el panel se creaban citas solapadas.
+  Reproduce `features/calendario/disponibilidad.ts` **a propósito**: son dos
+  copias deliberadas —el selector del panel no puede llamar al backend por cada
+  tecla— y si una cambia, la otra también. El caso dorado de `vistas/citas.md`
+  es un test.
+- **Citas** (Sprint 4.B): precio y duración se **congelan** en `cita_servicio`;
+  el `monto` editable reescribe el precio de esa línea (§2.6) y por eso el
+  Resource emite `monto` = suma de servicios y `monto_total` = con productos.
+  El **stock baja al COMPLETAR**, no al agendar, y deshacerlo lo devuelve
+  anotando la entrada — el libro no se reescribe nunca. Sin teléfono, el cliente
+  se crea nuevo aunque el nombre se repita: fusionar por nombre juntaría a dos
+  «María» y separar historiales mezclados es peor que dos fichas repetidas.
+  `DELETE` **borra de verdad**; cancelar es un ESTADO y es lo que conserva el
+  historial.
+- **`solo_propios` filtra desde el Sprint 4.B**: la cita de otro responde **404**
+  y no 403, igual que una sede fuera de alcance — para esa persona no existe.
 - **Las migraciones de tenant se escriben COMPLETAS en el Sprint 0**, aunque
   sus endpoints lleguen en sprints posteriores: el job de provisioning migra
   la BD entera una vez, y añadir tablas después obliga a re-migrar cada tenant.
