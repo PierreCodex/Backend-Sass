@@ -37,7 +37,43 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   verde, incluido el de aislación entre tenants. Merge con `--no-ff` para
   que cada módulo sea revertible de un tirón.
 
+## Flujo de trabajo con BMAD Method (desde 2026-09-19)
+
+BMAD v6 está instalado como skills de usuario (`~/.claude/skills/bmad-*`) y
+configurado en `_bmad/`. **La planificación pasa a BMAD y vive en UN solo
+sitio**: `D:\PERSONAL_JEAN\Sass-ChiraFlow\_bmad-output\planning-artifacts\`
+(este repo la lee por ruta, como antes el contrato):
+
+- `prds/prd-ChiraFlow-2026-09-19/prd.md` — **qué** hace el producto (FR-1 a
+  FR-76, con estado real). Las decisiones A-1 a A-7 del 2026-09-19 están ahí.
+- `propuesta-decisiones-2026-09-19.md` — matriz de roles, planes,
+  notificaciones y el porqué de A-1…A-7.
+- `diagnostico-2026-09-19.md` — estado real verificado y fallos abiertos.
+- La arquitectura, las épicas y `sprint-status.yaml` se generan a
+  continuación y **sustituirán** a `plan-sprints.md` y a `estado.md`.
+- `api-contract.md` **no se toca**: sigue siendo el original único.
+
+Los documentos caseros (`plan-sprints.md`, `estado.md`, fichas de `vistas/`,
+`pendientes-contrato.md`) siguen existiendo hasta verificar que no se pierde
+nada; mientras tanto se leen como historial, y **ante conflicto manda el
+PRD**.
+
+- **Una historia**: `bmad-build` sobre la historia, en su rama
+  `sprint-N/modulo`.
+- **Un arreglo pequeño**: `bmad-build` directo.
+- **Antes de mergear**: `bmad-code-review`. **Al cerrar una épica**:
+  `bmad-retrospective`.
+- Las reglas del proyecto entran en cada ejecución por
+  `_bmad/custom/bmad-{build,spec,code-review,retrospective}.toml`
+  (`persistent_facts`). Si cambia una regla que BMAD deba conocer, se cambia
+  aquí **y** allí. Los overrides personales van en `*.user.toml` (ignorados).
+- `_bmad/render/` es caché generada (ignorada). uv necesita
+  `UV_SYSTEM_CERTS=true` (ya está en la config de usuario de Claude Code) o no
+  consigue bajar `jinja2`.
+
 **Jerarquía ante conflicto**, de mayor a menor:
+0. El **PRD de BMAD** en los puntos que sustituye expresamente (A-2, A-3,
+   A-4; tabla al principio del PRD). Discrepancias los marca como superados
 1. `docs/discrepancias.md` (congelado) — las decisiones ya cerradas
 2. `api-contract.md` — la forma de los datos que el cliente ya espera
 3. Los SQL de `docs/` — reglas de negocio e integridad; desde el Sprint 0 son
@@ -77,9 +113,14 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
 
 - **Clientes finales SIN cuenta**: no hay login de cliente. La reserva pública
   pide nombre y teléfono; la ficha en `clientes` se crea o se encuentra por
-  teléfono (`firstOrCreate`). La gestión posterior de la cita va por el
-  `codigo` enviado por WhatsApp, no por sesión. `cliente` sale del ENUM
-  `users.rol`.
+  teléfono (`firstOrCreate`). `cliente` sale del ENUM `users.rol`.
+  **La gestión posterior de la cita va por un ENLACE SEGURO enviado por
+  correo** (decisión A-4, 2026-09-19; antes era el `codigo` por WhatsApp):
+  token aleatorio por cita, se guarda solo su hash, caduca 7 días después de
+  la cita y es revocable. Abre UNA cita (ver, reprogramar, cancelar); abrirlo
+  no cambia nada, toda acción se confirma en la página. El `codigo` de 8
+  caracteres queda como referencia legible y como llave de la subida del
+  comprobante (regla 7).
 - **Auth solo email + contraseña.** Nada de OAuth por ahora (el esquema no lo
   bloquea: añadir `google_id` nullable después es trivial).
 - **Usuarios y profesionales son cosas DISTINTAS** (separado el 2026-09-04;
@@ -162,11 +203,22 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   dueño verifica. Modelado con tabla **`cita_pagos` (1-N)**, no columnas
   planas en `citas`. En `citas` solo `metodo_pago_eleccion` y `estado_pago`
   (materializado, escrito solo por el service). Ver §6 de discrepancias.md.
-- **Sin caducidad de reserva impaga en v1**: expirar citas crea carreras con
-  el anti-solape. Se revisa con datos reales (métricas definidas en §6.2.1).
-- **Verificar un pago genera `caja_movimientos`** con `metodo=yape|plin`
-  automáticamente. Si la caja está cerrada, `caja_cierre_id` queda NULL y
-  `POST /caja/abrir` los adopta en la sesión nueva.
+- **Caducidad de la reserva impaga SOLO con pago obligatorio** (decisión A-3,
+  2026-09-19; sustituye «sin caducidad en v1» de discrepancias §6.2.1): el
+  negocio elige pago no pedido / opcional / obligatorio. Con obligatorio, si
+  no llega la evidencia en el plazo (por defecto 60 min, 15–240), la cita pasa
+  a `cancelada` y libera el hueco. La caducidad se hace con el MISMO
+  `FOR UPDATE` que una reserva, así que no hay carrera con el anti-solape. Con
+  evidencia subida ya no caduca. La cita sigue `pendiente` hasta que alguien
+  con `pagos: gestionar` verifica; mostrar el QR no confirma nada.
+- **Verificar un pago genera `caja_movimientos` SOLO cuando Caja esté
+  lanzada** (A-3). Antes no se crean: la regla de adopción metería meses de
+  pagos de golpe en la primera caja que se abriera.
+- **Canal y autor de la cita son dos cosas** (decisión A-2, 2026-09-19;
+  sustituye discrepancias §2.11): `canal` = `panel | tienda` (solo lo que
+  existe; WhatsApp o API se añaden cuando existan) y `creada_por_usuario_id`
+  = quién la registró (NULL si la reservó el cliente). La columna `fuente`
+  (`admin`) se migra con una migración NUEVA, sin editar la de agosto.
 - **Horario de locales**: el JSON es la fuente de verdad (permite "sábado
   hasta la 1, domingo cerrado"); el Resource deriva las columnas planas que
   pide el contrato.
@@ -197,9 +249,14 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   historial.
 - **`solo_propios` filtra desde el Sprint 4.B**: la cita de otro responde **404**
   y no 403, igual que una sede fuera de alcance — para esa persona no existe.
-- **Las migraciones de tenant se escriben COMPLETAS en el Sprint 0**, aunque
+- **Las migraciones de tenant se escribieron COMPLETAS en el Sprint 0**, aunque
   sus endpoints lleguen en sprints posteriores: el job de provisioning migra
   la BD entera una vez, y añadir tablas después obliga a re-migrar cada tenant.
+  **Desde el 2026-09-19 hay migraciones de tenant nuevas aprobadas** (canal y
+  autor de la cita, `local_servicio`, accesos por enlace, envíos de correo…).
+  Reglas: **nunca editar ni renombrar una migración que ya corrió** (la lección
+  del 2026-09-04), cada cambio es un archivo nuevo, y se despliega con
+  `tenants:migrar-provisionados`, nunca con `tenants:migrate` a secas.
 
 ## Base de datos (esquema real en docs/)
 

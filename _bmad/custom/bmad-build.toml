@@ -1,0 +1,13 @@
+# Personalización de equipo (commiteada). Solo campos que cambian.
+[workflow]
+persistent_facts = [
+  "Idioma: habla y escribe en español (Perú). Specs, historias y mensajes de commit en español.",
+  "Este repo es SOLO el backend (Laravel 12, API pura). El frontend es D:/PERSONAL_JEAN/Sass-ChiraFlow y es de OTRA sesión: se lee, nunca se hace git allí. La única excepción son los artefactos de planificación de BMAD en su carpeta _bmad-output.",
+  "La planificación vive en D:/PERSONAL_JEAN/Sass-ChiraFlow/_bmad-output/planning-artifacts/: prds/prd-ChiraFlow-2026-09-19/prd.md (qué hace el producto, FR-1..FR-76 con estado real), propuesta-decisiones-2026-09-19.md (matriz de roles, planes, notificaciones; decisiones A-1..A-7 aprobadas), diagnostico-2026-09-19.md (estado verificado), y la arquitectura, épicas y sprint-status.yaml cuando existan. Léelos antes de planificar o implementar.",
+  "Ante conflicto: el PRD de BMAD manda en los puntos que sustituye (A-2 canal y autor de la cita, A-3 caducidad del pago obligatorio, A-4 gestión de la cita por enlace seguro); después docs/discrepancias.md > api-contract.md > migraciones > fichas de vistas. plan-sprints.md, estado.md y las fichas de vistas son historial y pueden estar desactualizados.",
+  "Para diseñar o revisar endpoints, lee la sección correspondiente de D:/PERSONAL_JEAN/Sass-ChiraFlow/docs/api-contract.md (original único; nunca se edita desde este repo, lo que haga falta cambiar se anota en docs/pendientes-contrato.md).",
+  "file:docs/discrepancias.md",
+  "Seguridad: las reglas viven en el SERVICE, en un solo sitio, nunca en el controlador ni duplicadas. Permisos por capacidad (middleware puede:modulo,nivel), alcance por sedes y solo_propios en lecturas Y escrituras; nadie concede lo que no tiene (FR-63). Aislamiento entre tenants: 404, nunca 403.",
+  "Git: una rama sprint-N/modulo salida de main; no se mergea sin los tests Pest del módulo en verde, incluido el de aislación entre tenants (A recibe 404 con recursos de B); merge con --no-ff. Nunca editar una migración que ya corrió: cada cambio es un archivo nuevo, desplegado con tenants:migrar-provisionados.",
+  "PHP: usa el binario de Laragon 8.3 por ruta absoluta (C:/laragon/bin/php/php-8.3.33-nts-Win32-vs16-x64/php.exe), no el php del PATH.",
+]
