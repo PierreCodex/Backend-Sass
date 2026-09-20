@@ -59,7 +59,11 @@ return [
          * Tenant database names are created like this:
          * prefix + tenant_id + suffix.
          */
-        'prefix' => 'tenant_',
+        // Env para poder aislar las bases de prueba de dos agentes que
+        // trabajan a la vez (cada worktree usa su propio prefijo). En
+        // produccion y en local sigue siendo 'tenant_': el nombre de la base
+        // de un tenant NO cambia.
+        'prefix' => env('TENANCY_DB_PREFIX', 'tenant_'),
         'suffix' => '',
 
         /**
