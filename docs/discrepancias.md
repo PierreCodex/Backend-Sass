@@ -3,6 +3,8 @@
 Fecha de análisis: 2026-08-14.
 Estado: **CONGELADO** (2026-08-14) — todas las decisiones abiertas quedaron
 cerradas; el siguiente paso son las migraciones.
+Notas de «superado» posteriores (sin reabrir nada): 2026-09-04 (§1.9, dos) y
+2026-09-19 (§2.2, §2.11, §6.2 — decisiones A-2, A-3 y A-4 del PRD de BMAD).
 Fuentes: `D:\PERSONAL_JEAN\Sass-ChiraFlow\docs\api-contract.md` (contrato, solo lectura),
 `docs/01_bd_central.sql`, `docs/02_bd_tenant.sql`.
 
@@ -237,6 +239,17 @@ más `cliente_nombre/telefono/email` sueltos, y el tipo `Cita` declara
 - Sin cambio de SQL; sin cambio de contrato (a lo sumo anotar el
   comportamiento).
 
+> ⚠️ **Superado el 2026-09-19 — cómo gestiona el cliente su cita (A-4).**
+>
+> El texto de arriba se conserva tal cual; esto **no lo reabre**, registra
+> que el dueño del producto lo cambió después. Los clientes **siguen sin
+> cuenta**, pero la gestión de la cita ya no va por el `codigo` vía WhatsApp,
+> sino por un **enlace seguro enviado por correo** (token por cita, solo su
+> hash en BD, caduca 7 días después de la cita, revocable, abre una sola
+> cita). El `codigo` queda como referencia legible y como llave de la subida
+> del comprobante (§6.3). Detalle: PRD de BMAD, FR-69 y FR-70
+> (`Sass-ChiraFlow/_bmad-output/planning-artifacts/prds/`).
+
 ### 2.3 `profesionales` vs «empleados»
 
 El recurso del contrato se llama `empleados` y sus ids eran `users.id` en el
@@ -395,6 +408,15 @@ Ninguna de las dos listas mapea limpia (¿`web` vs `publica`?, ¿`whatsapp` y
   pone etiquetas, el cambio es barato y elimina el mapeo. Hasta entonces,
   emitir las tres claves del contrato con `whatsapp+api` agrupadas fuera o en
   `web`, y documentarlo.
+
+> ⚠️ **Superado el 2026-09-19 — canal y autor de la cita (A-2).**
+>
+> Se conserva lo de arriba; esto registra la decisión posterior del dueño del
+> producto. `fuente` se sustituye por dos columnas: **`canal`** (`panel |
+> tienda`, solo lo que existe; `whatsapp` y `api` salen del ENUM hasta que
+> existan) y **`creada_por_usuario_id`** (quién la registró; NULL si fue el
+> cliente). Migración nueva: `admin→panel`, `publica→tienda`. `Reporte` agrupa
+> por los mismos canales. Detalle: PRD de BMAD, FR-33 y FR-68.
 
 ### 2.12 Otros detalles donde la BD manda y el Resource traduce
 
@@ -636,6 +658,30 @@ de aceptar otro).
    cita). La elección de la tabla `cita_pagos` en §6.1 deja la seña a un paso:
    cuando se habilite, será `monto` parcial + un campo de configuración
    (`porcentaje_sena` en `tenants`), sin tocar el esquema de pagos.
+
+> ⚠️ **Superado el 2026-09-19 — caducidad y caja (A-3).**
+>
+> Se conservan las respuestas de arriba; esto registra dos cambios del dueño
+> del producto:
+>
+> 1. **Pregunta 1 (caducidad).** El negocio elige pago **no pedido, opcional u
+>    obligatorio**. Solo con obligatorio, si no llega la evidencia en el plazo
+>    (por defecto 60 min, entre 15 y 240) la cita pasa a `cancelada` y libera
+>    el hueco. El temor a carreras con el anti-solape se resuelve haciendo la
+>    caducidad con el mismo `FOR UPDATE` que una reserva. Con evidencia subida
+>    ya no caduca; con pago opcional, nunca. Las métricas de §6.2.1 siguen
+>    valiendo para ajustar el plazo.
+> 2. **Pregunta 3 (caja).** Verificar un pago **no** crea `caja_movimientos`
+>    mientras el módulo Caja no esté lanzado; si no, la adopción metería meses
+>    de pagos de golpe en la primera caja abierta. Cuando Caja exista, se
+>    aplica lo de arriba.
+>
+> Además: la cita sigue `pendiente` hasta verificar (solo entonces
+> `confirmada`), verifica quien tiene la capacidad nueva `pagos: gestionar`, y
+> una cita pagada que se cancela deja el pago en `devolucion_pendiente` (la
+> devolución se hace fuera del sistema y se marca `devuelto`). La pregunta 4
+> (solo pago total en v1) sigue en pie. Detalle: PRD de BMAD, FR-44 a FR-46,
+> FR-71 y FR-72.
 
 ### 6.3 Requisitos de seguridad de la subida de comprobantes
 
