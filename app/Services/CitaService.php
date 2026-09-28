@@ -12,6 +12,7 @@ use App\Models\Producto;
 use App\Models\Profesional;
 use App\Models\Servicio;
 use App\Models\Tenant;
+use App\Support\Capacidades;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +38,8 @@ class CitaService
     public function crear(Tenant $negocio, array $datos, int $usuarioId): Cita
     {
         return DB::transaction(function () use ($negocio, $datos, $usuarioId) {
+            $this->exigirProfesionalEnAlcance($datos, $usuarioId);
+
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
 
@@ -76,6 +79,11 @@ class CitaService
     public function actualizar(Tenant $negocio, Cita $cita, array $datos, int $usuarioId): Cita
     {
         return DB::transaction(function () use ($negocio, $cita, $datos, $usuarioId) {
+            // También al actualizar: sin esto, reasignar la cita a un compañero
+            // era la puerta de atrás — y además la hacía desaparecer de la
+            // vista de quien la creó.
+            $this->exigirProfesionalEnAlcance($datos, $usuarioId);
+
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
             $estadoAnterior = $cita->estado;
@@ -114,6 +122,85 @@ class CitaService
             // conservar el historial; borrar es para lo que nunca debió existir.
             $cita->delete();
         });
+    }
+
+    /**
+     * Con `solo_propios`, el DESTINO de la cita es su propia ficha o no se guarda.
+     *
+     * Vive en el service y no en el controlador ni en el Form Request
+     * (NFR-12): un candado en un endpoint protege ese endpoint, el mismo
+     * candado aquí protege los dos caminos que escriben `profesional_id`
+     * —`crear()` y `actualizar()`— sin dos copias de la regla. Hasta ahora
+     * `solo_propios` solo filtraba al LEER, así que un barbero no veía las
+     * citas de sus compañeros pero sí podía crearlas, y al reasignar la suya
+     * la hacía desaparecer de su propia vista.
+     *
+     * **Cubre UN solo eje: a nombre de quién queda la cita.** Lo que NO cubre,
+     * y conviene saberlo antes de apoyarse en ello:
+     *
+     * - **De quién ES la cita** que se edita o se borra. Eso sigue en
+     *   `CitaController::exigirVisibilidad()`, con su 404; `eliminar()` no
+     *   comprueba nada por su cuenta.
+     * - **La sede** (hueco G-2, Story 1.2): el alcance por locales vive
+     *   todavía en el controlador.
+     *
+     * Por eso la reserva pública de la Épica 6 NO puede entrar por `crear()`
+     * dando esto por suficiente: tendrá que traer cerrados esos dos ejes antes.
+     *
+     * Las `Capacidades` se resuelven desde el `$usuarioId` que este service ya
+     * recibe y NUNCA se pasan por parámetro: si el que llama pudiera
+     * entregarlas —o entregar `null`—, el candado volvería a depender de quién
+     * llama, que es justo lo que este arreglo viene a quitar.
+     *
+     * **Falla cerrado**: sin ficha de profesional no agenda para nadie.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function exigirProfesionalEnAlcance(array $datos, int $usuarioId): void
+    {
+        $capacidades = Capacidades::deUsuarioCentral($usuarioId);
+
+        if (! $capacidades->soloPropios()) {
+            return;
+        }
+
+        $ficha = $capacidades->profesional();
+
+        /*
+         * Sin ficha, mensaje propio. «Solo puedes agendar citas para ti» no es
+         * accionable aquí: para esta cuenta no existe ese «ti», y quien lo lea
+         * se pondría a buscar el profesional correcto en vez de pedir su ficha.
+         */
+        if ($ficha === null) {
+            throw ValidationException::withMessages([
+                'empleado_id' => 'Tu cuenta no tiene ficha de profesional, así que no puede agendar citas.',
+            ]);
+        }
+
+        /*
+         * `?? null` y no `$datos['empleado_id']` a pelo: quien llame a este
+         * service sin pasar por `CitaRequest` merece un rechazo, no un
+         * «undefined array key». `(int) null` es 0 y no es la ficha de nadie.
+         *
+         * Y el `(int)` importa: la regla `integer` del Form Request ACEPTA la
+         * cadena "3" y `validated()` la entrega tal cual, sin castear — sin
+         * esto, el candado bloquearía al propio profesional.
+         */
+        if ($ficha->id === (int) ($datos['empleado_id'] ?? null)) {
+            return;
+        }
+
+        /*
+         * 422 en `empleado_id` y no 403: el campo es el que está fuera de
+         * alcance, y es donde la ficha del panel pinta el error, bajo el
+         * selector de profesional. El 404 se reserva para la cita ajena, que ya
+         * lo devuelve `exigirVisibilidad()`.
+         */
+        throw ValidationException::withMessages([
+            'empleado_id' => 'Solo puedes agendar citas para ti.',
+        ]);
     }
 
     /**

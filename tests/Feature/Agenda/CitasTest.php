@@ -450,39 +450,75 @@ test('borrar una cita completada devuelve su stock antes de irse', function () {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Una cuenta del negocio con los permisos que se le pidan, con o sin
+ * `solo_propios`, y unida —o no— a una ficha de profesional. Devuelve su token.
+ *
+ * Es el montaje de tres piezas que piden todos los casos de «quién ve qué» y
+ * de «para quién agenda»: el rol en la base del tenant, el `User` central que
+ * hace login y el `Usuario` que los une. Escrito una vez para que ninguna
+ * prueba pase en verde porque su montaje se quedó a medias.
+ *
+ * El nombre del rol y el correo se derivan de un contador, así que **dos
+ * llamadas en el mismo test conviven**: los dos campos son únicos en la base y
+ * fijarlos obligaba a montar a mano la segunda cuenta. Si se pasan `rol` o
+ * `email` a mano, el contador no interviene y repetir el mismo valor revienta
+ * contra el unique.
+ *
+ * Opciones: `permisos`, `solo_propios`, `ficha`, `rol`, `email`.
+ */
+function cuentaDelNegocio(object $test, array $opciones = []): string
+{
+    static $n = 0;
+    $n++;
+
+    $rolId = comoOtro($test, $test->token)->postJson('/api/roles', [
+        'nombre' => $opciones['rol'] ?? "Barbero {$n}",
+        'permisos' => $opciones['permisos'] ?? ['citas' => 'gestionar'],
+        'solo_propios' => $opciones['solo_propios'] ?? true,
+    ])->assertCreated()->json('data.id');
+
+    $central = User::create([
+        'tenant_id' => $test->tenant->id,
+        'nombre' => 'Luis',
+        'email' => $opciones['email'] ?? "luis{$n}@elrosal.pe",
+        'password' => 'secreta123',
+        'rol' => 'profesional',
+    ]);
+
+    $test->tenant->run(function () use ($central, $rolId, $opciones) {
+        $usuario = Usuario::create(['central_user_id' => $central->id, 'rol_id' => $rolId]);
+
+        // Sin ficha, la cuenta entra al panel y no atiende: es el caso que
+        // tiene que fallar CERRADO.
+        if (($opciones['ficha'] ?? null) !== null) {
+            Profesional::whereKey($opciones['ficha'])->update(['usuario_id' => $usuario->id]);
+        }
+    });
+
+    return $central->createToken('t')->plainTextToken;
+}
+
+/** Un segundo profesional, sin horario propio: hereda el del negocio. */
+function otroProfesional(object $test, string $nombre = 'Luis Ramos'): Profesional
+{
+    return $test->tenant->run(fn () => Profesional::create([
+        'nombre' => $nombre,
+        'horario' => null,
+    ]));
+}
+
 /*
  * `solo_propios` llevaba desde el Sprint 2 guardándose sin filtrar nada, porque
  * no había citas que filtrar. Aquí empieza a significar algo.
  */
 test('con solo_propios un profesional ve solo sus citas', function () {
-    $otro = $this->tenant->run(fn () => Profesional::create([
-        'nombre' => 'Luis Ramos',
-        'horario' => null, // hereda el del negocio
-    ]));
+    $otro = otroProfesional($this);
 
     agendar($this)->assertCreated();
     agendar($this, ['empleado_id' => $otro->id, 'hora_inicio' => '10:00', 'cliente_telefono' => null])->assertCreated();
 
-    $rolId = comoOtro($this, $this->token)->postJson('/api/roles', [
-        'nombre' => 'Barbero',
-        'permisos' => ['citas' => 'gestionar'],
-        'solo_propios' => true,
-    ])->assertCreated()->json('data.id');
-
-    $central = User::create([
-        'tenant_id' => $this->tenant->id,
-        'nombre' => 'Luis',
-        'email' => 'luis@elrosal.pe',
-        'password' => 'secreta123',
-        'rol' => 'profesional',
-    ]);
-
-    $this->tenant->run(function () use ($central, $rolId, $otro) {
-        $usuario = Usuario::create(['central_user_id' => $central->id, 'rol_id' => $rolId]);
-        Profesional::whereKey($otro->id)->update(['usuario_id' => $usuario->id]);
-    });
-
-    $token = $central->createToken('t')->plainTextToken;
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
 
     comoOtro($this, $token)->getJson('/api/citas')
         ->assertOk()
@@ -497,45 +533,185 @@ test('con solo_propios un profesional ve solo sus citas', function () {
 test('la cita de otro profesional responde 404 a quien solo ve las suyas', function () {
     $ajena = agendar($this)->assertCreated()->json('data.id');
 
-    $rolId = comoOtro($this, $this->token)->postJson('/api/roles', [
-        'nombre' => 'Barbero',
-        'permisos' => ['citas' => 'gestionar'],
-        'solo_propios' => true,
-    ])->assertCreated()->json('data.id');
-
-    $central = User::create([
-        'tenant_id' => $this->tenant->id,
-        'nombre' => 'Luis',
-        'email' => 'luis@elrosal.pe',
-        'password' => 'secreta123',
-        'rol' => 'profesional',
-    ]);
-
-    $this->tenant->run(fn () => Usuario::create(['central_user_id' => $central->id, 'rol_id' => $rolId]));
-
-    $token = $central->createToken('t')->plainTextToken;
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
 
     comoOtro($this, $token)->getJson("/api/citas/{$ajena}")->assertNotFound();
+
+    /*
+     * También el PUT, y con un `empleado_id` que ADEMÁS está fuera de su
+     * alcance: así las dos ramas compiten de verdad y se ve cuál gana. Tiene
+     * que ganar el 404 — un 422 sobre el campo confirmaría que la cita ajena
+     * está ahí, que es justo lo que el filtro viene a ocultar. Con la ficha
+     * propia en el payload este test pasaría con la precedencia invertida.
+     */
+    comoOtro($this, $token)->putJson("/api/citas/{$ajena}", citaValida($this, [
+        'empleado_id' => $this->profesional->id,
+        'estado' => 'confirmada',
+    ]))->assertNotFound();
+
+    comoOtro($this, $token)->deleteJson("/api/citas/{$ajena}")->assertNotFound();
+
+    // Y sigue siendo de Rosa: el PUT no llegó a escribir nada.
+    expect($this->tenant->run(fn () => Cita::find($ajena)->profesional_id))
+        ->toBe($this->profesional->id);
+});
+
+/*
+ * Y sin ficha no ve NINGUNA, que es la otra mitad de la regla: quien entra al
+ * panel no siempre atiende, y quien no atiende no tiene citas propias.
+ *
+ * Es la rama `?->id ?? 0` del listado y el `?->id` nulo del 404. Sin este test,
+ * relajar la comprobación a «solo si tiene ficha» le abriría la agenda entera
+ * sin que fallara nada.
+ */
+test('con solo_propios y sin ficha no ve ninguna cita', function () {
+    $ajena = agendar($this)->assertCreated()->json('data.id');
+
+    $token = cuentaDelNegocio($this, ['ficha' => null]);
+
+    comoOtro($this, $token)->getJson('/api/citas')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+
+    comoOtro($this, $token)->getJson("/api/citas/{$ajena}")->assertNotFound();
+    comoOtro($this, $token)->putJson("/api/citas/{$ajena}", citaValida($this, [
+        'estado' => 'confirmada',
+    ]))->assertNotFound();
     comoOtro($this, $token)->deleteJson("/api/citas/{$ajena}")->assertNotFound();
 });
 
-test('quien solo tiene ver no agenda', function () {
-    $rolId = comoOtro($this, $this->token)->postJson('/api/roles', [
-        'nombre' => 'Mirón',
-        'permisos' => ['citas' => 'ver'],
-    ])->assertCreated()->json('data.id');
+/*
+|--------------------------------------------------------------------------
+| Para quién agenda
+|--------------------------------------------------------------------------
+*/
 
-    $central = User::create([
-        'tenant_id' => $this->tenant->id,
-        'nombre' => 'Ana',
-        'email' => 'mira@elrosal.pe',
-        'password' => 'secreta123',
-        'rol' => 'profesional',
+/*
+ * El hueco G-1: `solo_propios` filtraba al LEER y no al ESCRIBIR, así que un
+ * barbero no veía las citas de sus compañeros pero sí podía crearlas — y al
+ * reasignar la suya, hacerla desaparecer de su propia vista.
+ */
+test('con solo_propios agenda para sí mismo', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this, [
+        'empleado_id' => $otro->id,
+    ]))
+        ->assertCreated()
+        ->assertJsonPath('data.empleado.nombre', 'Luis Ramos');
+});
+
+/*
+ * El id llega como CADENA cuando el panel lo saca de un `<select>`: la regla
+ * `integer` del Form Request la acepta y `validated()` la entrega tal cual, sin
+ * castear. Sin el `(int)` del service, `'3' === 3` es false y el candado
+ * bloquearía al propio profesional.
+ */
+test('con solo_propios el empleado_id como cadena sigue siendo el suyo', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this, [
+        'empleado_id' => (string) $otro->id,
+    ]))->assertCreated();
+});
+
+/*
+ * Y sigue editando la SUYA. Los demás casos del `PUT` son negativos, así que
+ * una regresión que bloqueara la edición legítima pasaría en verde sin esto.
+ */
+test('con solo_propios sí edita su propia cita', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+
+    $id = comoOtro($this, $token)->postJson('/api/citas', citaValida($this, [
+        'empleado_id' => $otro->id,
+    ]))->assertCreated()->json('data.id');
+
+    comoOtro($this, $token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'empleado_id' => $otro->id,
+        'hora_inicio' => '11:00',
+        'estado' => 'confirmada',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('data.hora_inicio', '11:00')
+        ->assertJsonPath('data.estado', 'confirmada');
+});
+
+test('con solo_propios no agenda a nombre de un compañero', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+
+    // `empleado_id` por defecto es Rosa, que no es él.
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'Solo puedes agendar citas para ti.');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
+test('con solo_propios no reasigna su cita a otro profesional', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+
+    $id = comoOtro($this, $token)->postJson('/api/citas', citaValida($this, [
+        'empleado_id' => $otro->id,
+    ]))->assertCreated()->json('data.id');
+
+    comoOtro($this, $token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'empleado_id' => $this->profesional->id,
+        'estado' => 'confirmada',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id');
+
+    // La cita conserva su profesional: la transacción no escribió nada.
+    expect($this->tenant->run(fn () => Cita::find($id)->profesional_id))->toBe($otro->id);
+});
+
+/*
+ * Falla CERRADO. Quien entra al panel no siempre atiende, y sin ficha no hay
+ * «lo suyo»: darle la agenda entera sería lo contrario de lo que dice su rol.
+ */
+test('con solo_propios y sin ficha de profesional no agenda para nadie', function () {
+    $token = cuentaDelNegocio($this, ['ficha' => null]);
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        // Mensaje propio: «solo puedes agendar para ti» no sería accionable,
+        // porque para esta cuenta no existe ese «ti».
+        ->assertJsonPath(
+            'errors.empleado_id.0',
+            'Tu cuenta no tiene ficha de profesional, así que no puede agendar citas.',
+        );
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
+/* Y sin `solo_propios` no cambia nada: la recepcionista agenda para quien sea. */
+test('sin solo_propios se agenda para cualquier profesional', function () {
+    $token = cuentaDelNegocio($this, [
+        'rol' => 'Recepción',
+        'solo_propios' => false,
+        'ficha' => null,
     ]);
 
-    $this->tenant->run(fn () => Usuario::create(['central_user_id' => $central->id, 'rol_id' => $rolId]));
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this))
+        ->assertCreated()
+        ->assertJsonPath('data.empleado.nombre', 'Rosa Paredes');
+});
 
-    $token = $central->createToken('t')->plainTextToken;
+test('quien solo tiene ver no agenda', function () {
+    $token = cuentaDelNegocio($this, [
+        'rol' => 'Mirón',
+        'permisos' => ['citas' => 'ver'],
+        'solo_propios' => false,
+        'ficha' => null,
+    ]);
 
     comoOtro($this, $token)->getJson('/api/citas')->assertOk();
     comoOtro($this, $token)->postJson('/api/citas', citaValida($this))
