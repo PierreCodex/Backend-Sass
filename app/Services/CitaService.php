@@ -38,7 +38,13 @@ class CitaService
     public function crear(Tenant $negocio, array $datos, int $usuarioId): Cita
     {
         return DB::transaction(function () use ($negocio, $datos, $usuarioId) {
-            $this->exigirProfesionalEnAlcance($datos, $usuarioId);
+            // UNA resolución por llamada al service, compartida por los dos
+            // ejes del alcance: a nombre de quién y en qué sede. (La que ya
+            // resolvió el middleware `puede:` es aparte y no llega aquí.)
+            $capacidades = Capacidades::deUsuarioCentral($usuarioId);
+
+            $this->exigirProfesionalEnAlcance($capacidades, $datos);
+            $localId = $this->sedeEnAlcance($capacidades, $datos);
 
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
@@ -47,7 +53,7 @@ class CitaService
 
             $cita = Cita::create([
                 'codigo' => $this->codigoLibre(),
-                'local_id' => $datos['local_id'] ?? $this->localPorDefecto(),
+                'local_id' => $localId,
                 'profesional_id' => $profesional->id,
                 'cliente_id' => $this->resolverCliente($datos)->id,
                 'starts_at' => $this->inicio($datos),
@@ -81,8 +87,12 @@ class CitaService
         return DB::transaction(function () use ($negocio, $cita, $datos, $usuarioId) {
             // También al actualizar: sin esto, reasignar la cita a un compañero
             // era la puerta de atrás — y además la hacía desaparecer de la
-            // vista de quien la creó.
-            $this->exigirProfesionalEnAlcance($datos, $usuarioId);
+            // vista de quien la creó. Y lo mismo con la sede: moverla a una
+            // ajena la sacaba del alcance de quien la edita.
+            $capacidades = Capacidades::deUsuarioCentral($usuarioId);
+
+            $this->exigirProfesionalEnAlcance($capacidades, $datos);
+            $localId = $this->sedeEnAlcance($capacidades, $datos, $cita);
 
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
@@ -92,7 +102,7 @@ class CitaService
             $this->exigirHuecoLibre($negocio, $profesional, $datos, $servicio->duracion_min, $cita->id);
 
             $cita->fill([
-                'local_id' => $datos['local_id'] ?? $cita->local_id,
+                'local_id' => $localId,
                 'profesional_id' => $profesional->id,
                 'cliente_id' => $this->resolverCliente($datos, $cita)->id,
                 'starts_at' => $this->inicio($datos),
@@ -141,16 +151,19 @@ class CitaService
      * - **De quién ES la cita** que se edita o se borra. Eso sigue en
      *   `CitaController::exigirVisibilidad()`, con su 404; `eliminar()` no
      *   comprueba nada por su cuenta.
-     * - **La sede** (hueco G-2, Story 1.2): el alcance por locales vive
-     *   todavía en el controlador.
+     * - **La sede**: es el otro eje, y lo cierra `sedeEnAlcance()` (G-2).
      *
      * Por eso la reserva pública de la Épica 6 NO puede entrar por `crear()`
-     * dando esto por suficiente: tendrá que traer cerrados esos dos ejes antes.
+     * dando esto por suficiente: tendrá que traer cerrado antes de quién es la
+     * cita, y resolver sus propias `Capacidades` (sin cuenta, `locales()` es
+     * `null` y el eje sede no restringe nada).
      *
-     * Las `Capacidades` se resuelven desde el `$usuarioId` que este service ya
-     * recibe y NUNCA se pasan por parámetro: si el que llama pudiera
-     * entregarlas —o entregar `null`—, el candado volvería a depender de quién
-     * llama, que es justo lo que este arreglo viene a quitar.
+     * Las `Capacidades` las resuelven `crear()`/`actualizar()` desde el
+     * `$usuarioId` que este service ya recibe, UNA vez por escritura, y llegan
+     * aquí por un parámetro de método PRIVADO. El llamador externo sigue sin
+     * poder entregarlas —ni entregar `null`—: si pudiera, el candado volvería
+     * a depender de quién llama, que es justo lo que este arreglo viene a
+     * quitar.
      *
      * **Falla cerrado**: sin ficha de profesional no agenda para nadie.
      *
@@ -158,10 +171,8 @@ class CitaService
      *
      * @throws ValidationException
      */
-    private function exigirProfesionalEnAlcance(array $datos, int $usuarioId): void
+    private function exigirProfesionalEnAlcance(Capacidades $capacidades, array $datos): void
     {
-        $capacidades = Capacidades::deUsuarioCentral($usuarioId);
-
         if (! $capacidades->soloPropios()) {
             return;
         }
@@ -201,6 +212,86 @@ class CitaService
         throw ValidationException::withMessages([
             'empleado_id' => 'Solo puedes agendar citas para ti.',
         ]);
+    }
+
+    /**
+     * La sede donde cae la cita, siempre dentro del alcance de quien escribe.
+     *
+     * El alcance por sedes solo existía al LEER (`CitaController::acotar()` y
+     * `exigirVisibilidad()`): `POST` escribía el `local_id` que llegara sin
+     * mirarlo, sin `local_id` asignaba la principal aunque quedara fuera, y
+     * `PUT` movía una cita propia a una sede ajena — donde dejaba de verla
+     * quien la había movido. Es el hueco G-2. Vive aquí, junto al eje
+     * `solo_propios`, por la misma razón (NFR-12): una regla, un sitio, para
+     * los dos caminos que escriben `local_id`.
+     *
+     * - `local_id` explícito → tiene que estar en el alcance, o 422.
+     * - Sin `local_id` al ACTUALIZAR → conserva la suya; no se inventa otra.
+     *   Si tiene sede, `exigirVisibilidad()` ya dio 404 cuando está fuera del
+     *   alcance. Una cita SIN sede (`local_id` NULL) no la comprueba nadie:
+     *   `exigirVisibilidad()` se salta ese caso. Es un hueco previo, diferido.
+     * - Sin `local_id` al CREAR → la principal si está en el alcance; si no, la
+     *   sede activa del alcance con el id más bajo (determinista); sin ninguna,
+     *   422. El contrato ya delega en el backend la sede cuando no hay
+     *   elección.
+     *
+     * Con `todos_los_locales` (`locales()` = `null`) nada cambia respecto a
+     * antes. Lo que NO mira: que la sede esté activa ni que el profesional o
+     * el servicio estén habilitados en ella (G-3, Story 1.3).
+     *
+     * 422 en `local_id` y no 403: es el campo que está fuera de alcance, igual
+     * que `empleado_id` en el otro eje. La cita ajena sigue siendo 404.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function sedeEnAlcance(Capacidades $capacidades, array $datos, ?Cita $cita = null): ?int
+    {
+        $alcance = $capacidades->locales();
+        $pedida = $datos['local_id'] ?? null;
+
+        if ($pedida !== null) {
+            // `(int)`: la regla `integer` deja pasar "3" como cadena, igual
+            // que en `empleado_id`.
+            $pedida = (int) $pedida;
+
+            if ($alcance !== null && ! in_array($pedida, array_map('intval', $alcance), true)) {
+                throw ValidationException::withMessages([
+                    'local_id' => 'No puedes agendar citas en esa sede.',
+                ]);
+            }
+
+            return $pedida;
+        }
+
+        if ($cita !== null) {
+            return $cita->local_id;
+        }
+
+        if ($alcance === null) {
+            return $this->localPorDefecto();
+        }
+
+        /*
+         * Una consulta para las dos preferencias: la principal primero, y si no
+         * está en el alcance (o no está activa), la de id más bajo. Un alcance
+         * vacío no llega a preguntar: `whereIn` con lista vacía no encuentra
+         * nada, que es justo la respuesta.
+         */
+        $localId = $alcance === [] ? null : Local::whereIn('id', $alcance)
+            ->where('activo', true)
+            ->orderByDesc('es_principal')
+            ->orderBy('id')
+            ->value('id');
+
+        if ($localId === null) {
+            throw ValidationException::withMessages([
+                'local_id' => 'Tu cuenta no tiene ninguna sede activa a su alcance, así que no puede agendar citas.',
+            ]);
+        }
+
+        return (int) $localId;
     }
 
     /**

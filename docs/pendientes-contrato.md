@@ -1818,3 +1818,47 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
   PRD NFR-12, hueco G-1.
 - **Estado**: el 422 está **hecho** (2026-09-20); `profesional_id` en
   `/capacidades`, **pendiente** de decidir en el contrato.
+
+---
+
+## [Story 1.2] El alcance por sedes también al ESCRIBIR: nuevo 422 en `local_id`
+
+- **Qué**: `POST /citas` y `PUT /citas/{id}` pueden responder **422 con el
+  error en `local_id`** a una cuenta con alcance acotado (sin
+  `todos_los_locales`). Dos mensajes, para pintarlos tal cual bajo el selector
+  de sede:
+  - «No puedes agendar citas en esa sede.» — el `local_id` enviado está fuera
+    de su alcance (al crear, o al mover una cita suya a otra sede).
+  - «Tu cuenta no tiene ninguna sede activa a su alcance, así que no puede
+    agendar citas.» — crea sin `local_id` y su alcance está vacío o solo tiene
+    sedes inactivas.
+
+  Sin `local_id` al **crear**, el backend asigna la principal si está en su
+  alcance; si no, la sede activa de su alcance con el id más bajo. Sin
+  `local_id` al **actualizar**, la cita conserva su sede. Con
+  `todos_los_locales` nada cambia.
+
+  En **`PUT`**, el **404** sobre la cita de una sede ajena no cambia y **gana
+  al 422**. En `POST` no hay cita previa, así que no aplica: solo el 422.
+
+- **Por qué**: el alcance por sedes solo filtraba al LEER. `POST` escribía el
+  `local_id` que llegara, sin él asignaba la principal aunque estuviera fuera
+  del alcance, y `PUT` movía una cita propia a una sede ajena — donde dejaba de
+  verla quien la movió. Hueco G-2.
+
+- **Lo que se pide al contrato**: documentar el 422 en `local_id` en
+  `POST/PUT /citas`. El selector de sede del panel debería ofrecer solo las
+  sedes del alcance, pero esconder opciones **no es autorización**: el backend
+  responde 422 igual. Ojo: `GET /locales` NO sirve de filtro con alcance
+  vacío (`LocalController` usa `when()` y `[]` cuenta como falso, así que
+  devuelve todas).
+
+  **Para el frontend**: el 422 «ninguna sede activa» llega en `local_id`
+  aunque el panel oculte el selector de sede (p. ej. con una sola). Si el
+  selector no está visible, mostrar ese error a nivel de formulario para que
+  no se pierda.
+
+- **Ref**: `CitaService::sedeEnAlcance()`, `App\Support\Capacidades::locales()`.
+  PRD NFR-12, hueco G-2.
+- **Estado**: el 422 está **hecho** (2026-09-28); documentarlo en el contrato,
+  **pendiente**.
