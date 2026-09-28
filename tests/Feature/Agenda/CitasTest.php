@@ -144,10 +144,13 @@ test('el monto editable reescribe la línea y recalcula el total', function () {
 
 test('con un solo local la cita se asigna sola a la sede principal', function () {
     // El provisioning de las pruebas no deja principal: sin crearla, esto
-    // compararía null con null y no fijaría nada.
-    [$principal] = tresSedes($this);
+    // compararía null con null y no fijaría nada. Solo la principal: es el
+    // caso de una sede (§2.12), no el de varias.
+    $principal = $this->tenant->run(fn () => Local::where('es_principal', true)->value('id')
+        ?? tap(new Local(['nombre' => 'Principal']), fn (Local $l) => $l->forceFill(['es_principal' => true])->save())->id);
 
-    expect($principal)->not->toBeNull();
+    expect($principal)->not->toBeNull()
+        ->and($this->tenant->run(fn () => Local::count()))->toBe(1);
 
     agendar($this)->assertCreated()->assertJsonPath('data.local_id', $principal);
 });
@@ -863,6 +866,22 @@ test('sin local_id se salta las sedes inactivas de su alcance', function () {
         ->assertJsonPath('data.local_id', $sur);
 });
 
+/*
+ * Un alcance `[]` es falso en PHP: un `if ($alcance && …)` dejaría a una cuenta
+ * sin sedes agendar en cualquiera (el fallo de `LocalController::index`).
+ */
+test('con el alcance vacío no agenda en una sede aunque la nombre', function () {
+    [, $norte] = tresSedes($this);
+    $token = cuentaConSedes($this, []);
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this, ['local_id' => $norte]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('local_id')
+        ->assertJsonPath('errors.local_id.0', 'No puedes agendar citas en esa sede.');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
 test('sin local_id y con el alcance vacío no agenda', function () {
     tresSedes($this);
     $token = cuentaConSedes($this, []);
@@ -934,6 +953,27 @@ test('con alcance de sedes edita su cita sin tocar la sede', function () {
         ->assertOk()
         ->assertJsonPath('data.local_id', $norte)
         ->assertJsonPath('data.hora_inicio', '11:00');
+});
+
+/*
+ * Con la principal en su alcance, el valor por defecto de CREAR sería la
+ * principal: al editar sin `local_id` la cita debe quedarse en norte.
+ */
+test('al editar sin local_id la cita conserva su sede aunque el defecto sea otra', function () {
+    [$principal, $norte] = tresSedes($this);
+    $token = cuentaConSedes($this, [$principal, $norte]);
+
+    $id = comoOtro($this, $token)->postJson('/api/citas', citaValida($this, ['local_id' => $norte]))
+        ->assertCreated()->json('data.id');
+
+    comoOtro($this, $token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'hora_inicio' => '11:00',
+        'estado' => 'confirmada',
+    ]))
+        ->assertOk()
+        ->assertJsonPath('data.local_id', $norte);
+
+    expect($this->tenant->run(fn () => Cita::find($id)->local_id))->toBe($norte);
 });
 
 /* El 404 de la cita ajena gana al 422 del campo: para él no existe. */
