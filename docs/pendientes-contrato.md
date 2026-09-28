@@ -1780,3 +1780,41 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
 - **Ref**: `CitaService`, `CitaController`, `CitaResource`,
   `app/Http/Requests/Citas/`.
 - **Estado**: hecho (2026-09-06).
+
+---
+
+## [Story 1.1] `solo_propios` también al ESCRIBIR: nuevo 422 en `empleado_id`
+
+- **Qué**: `POST /citas` y `PUT /citas/{id}` pueden responder **422 con el
+  error en `empleado_id`** a una cuenta cuyo rol tenga `solo_propios`. Dos
+  mensajes distintos, y conviene pintarlos tal cual:
+  - «Solo puedes agendar citas para ti.» — el `empleado_id` enviado es la
+    ficha de otro profesional.
+  - «Tu cuenta no tiene ficha de profesional, así que no puede agendar citas.»
+    — tiene `solo_propios` y ninguna fila en `profesionales`. Falla cerrado a
+    propósito: no se le deja agendar para nadie.
+
+  El **404** sobre la cita ajena no cambia y **gana al 422**: editar la cita de
+  un compañero responde 404 aunque el `empleado_id` también esté fuera de
+  alcance — un 422 sobre el campo confirmaría que esa cita existe.
+
+- **Por qué**: hasta ahora `solo_propios` solo filtraba al LEER. Un barbero no
+  veía las citas de sus compañeros pero sí podía crearlas, y al reasignar la
+  suya por `PUT` la hacía desaparecer de su propia vista. Es comportamiento
+  nuevo y visible para el cliente, así que el panel tiene que saberlo.
+
+- **Lo que se pide al contrato** (propuesta, no hecho): que
+  **`GET /capacidades` emita `profesional_id`** — el id de la ficha de quien
+  pide, o `null` si no tiene. Hoy el panel solo recibe `solo_propios: true` y
+  no sabe **quién es** esa persona como profesional, así que no puede
+  preseleccionar ni bloquear el selector de profesional: se entera con un 422
+  después de rellenar la ficha entera. Con el id, el selector se fija de
+  entrada y el 422 vuelve a ser lo que debe ser, una red y no el camino normal.
+  Esconder el selector **no es autorización**: el backend sigue respondiendo
+  422 igual.
+
+- **Ref**: `CitaService::exigirProfesionalEnAlcance()`,
+  `App\Support\Capacidades::profesional()`, `CapacidadesController`.
+  PRD NFR-12, hueco G-1.
+- **Estado**: el 422 está **hecho** (2026-09-20); `profesional_id` en
+  `/capacidades`, **pendiente** de decidir en el contrato.

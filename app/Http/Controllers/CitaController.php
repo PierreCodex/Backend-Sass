@@ -8,7 +8,6 @@ use App\Http\Requests\Citas\CitaRequest;
 use App\Http\Resources\CitaResource;
 use App\Models\Cita;
 use App\Models\Profesional;
-use App\Models\Usuario;
 use App\Services\CitaService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -102,9 +101,10 @@ class CitaController extends Controller
         }
 
         if ($this->soloLasSuyas($request)) {
-            // `whereRaw(0)` si no tiene ficha de profesional: quien no atiende
-            // no tiene citas propias, y devolverle la agenda entera sería justo
-            // lo contrario de lo que su rol dice.
+            // `?->id ?? 0` si no tiene ficha de profesional: ningún id es 0,
+            // así que no ve ninguna cita. Quien no atiende no tiene citas
+            // propias, y devolverle la agenda entera sería justo lo contrario
+            // de lo que su rol dice.
             $consulta->where('profesional_id', $this->fichaDe($request)?->id ?? 0);
         }
     }
@@ -133,13 +133,13 @@ class CitaController extends Controller
     /**
      * Su ficha de profesional, si la tiene.
      *
-     * Cuenta y ficha son cosas distintas desde que se separaron: quien entra al
-     * panel no siempre atiende. La unión es `profesionales.usuario_id`.
+     * La resuelve `Capacidades` y no este controlador: es la MISMA pregunta que
+     * se hace el service al escribir, y dos resoluciones distintas de lo mismo
+     * son las que se acaban separando. Además ya viene cargada del middleware,
+     * así que esto no cuesta una consulta.
      */
     private function fichaDe(Request $request): ?Profesional
     {
-        $usuario = Usuario::where('central_user_id', $request->user()->id)->first();
-
-        return $usuario === null ? null : Profesional::where('usuario_id', $usuario->id)->first();
+        return $request->attributes->get('capacidades')?->profesional();
     }
 }
