@@ -42,7 +42,9 @@ las fichas de `vistas/`.
   ensucia la salida con deprecaciones:
   `C:/laragon/bin/php/php-8.3.33-nts-Win32-vs16-x64/php.exe`
 - MySQL 8.4.11 (Laragon). El `my.ini` está en solo lectura a propósito.
-- `UV_SYSTEM_CERTS=true` es necesario para que `uv` baje dependencias.
+- `uv` necesita los certificados de Windows para bajar dependencias. Está en
+  `%APPDATA%\uv\uv.toml` (`system-certs = true`); si falla con `UnknownIssuer`,
+  revisar ese archivo.
 
 ```bash
 PHP="C:/laragon/bin/php/php-8.3.33-nts-Win32-vs16-x64/php.exe"

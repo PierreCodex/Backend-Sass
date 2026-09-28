@@ -67,9 +67,12 @@ PRD**.
   `_bmad/custom/bmad-{build,spec,code-review,retrospective}.toml`
   (`persistent_facts`). Si cambia una regla que BMAD deba conocer, se cambia
   aquí **y** allí. Los overrides personales van en `*.user.toml` (ignorados).
-- `_bmad/render/` es caché generada (ignorada). uv necesita
-  `UV_SYSTEM_CERTS=true` (ya está en la config de usuario de Claude Code) o no
-  consigue bajar `jinja2`.
+- `_bmad/render/` es caché generada (ignorada). uv necesita usar los
+  certificados de Windows o no consigue bajar `jinja2` (`invalid peer
+  certificate: UnknownIssuer`). Desde el 2026-09-28 está en la config de
+  usuario de uv, `%APPDATA%\uv\uv.toml` (`system-certs = true`), que vale para
+  cualquier agente; antes solo lo tenía Claude Code como variable de entorno y
+  Codex fallaba.
 
 **Jerarquía ante conflicto**, de mayor a menor:
 0. El **PRD de BMAD** en los puntos que sustituye expresamente (A-2, A-3,
