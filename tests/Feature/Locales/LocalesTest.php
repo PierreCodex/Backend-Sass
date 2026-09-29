@@ -3,6 +3,7 @@
 use App\Jobs\ProvisionTenantDatabase;
 use App\Models\Local;
 use App\Models\Plan;
+use App\Models\Profesional;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -66,6 +67,29 @@ test('el primer local nace como principal; el segundo, no', function () {
     enviarLocal($this, localValido(['nombre' => 'El Rosal Castilla']))
         ->assertCreated()
         ->assertJsonPath('data.es_principal', false);
+});
+
+/*
+ * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se agenda a quien está
+ * habilitado en la sede. Una sede vacía dejaría sin agenda a un negocio de una
+ * sola sede; entran los profesionales activos y el negocio recorta después.
+ */
+test('una sede nueva habilita a todos los profesionales, también los de baja, no a los borrados', function () {
+    [$activo, $inactivo] = $this->tenant->run(function () {
+        $inactivo = Profesional::create(['nombre' => 'De baja', 'activo' => false]);
+        $borrado = Profesional::create(['nombre' => 'Borrado']);
+        $borrado->delete();
+
+        // El dueño independiente ya tiene ficha activa desde el provisioning.
+        return [Profesional::where('activo', true)->value('id'), $inactivo->id];
+    });
+
+    $id = enviarLocal($this, localValido())->assertCreated()->json('data.id');
+
+    $filas = $this->tenant->run(fn () => DB::table('local_profesional')->where('local_id', $id)->orderBy('profesional_id')->get());
+
+    expect($filas->pluck('profesional_id')->map(fn ($v) => (int) $v)->all())->toBe([$activo, $inactivo])
+        ->and($filas->every(fn ($f) => (bool) $f->habilitado))->toBeTrue();
 });
 
 test('`es_principal` se ignora aunque se mande a mano', function () {

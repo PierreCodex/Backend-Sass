@@ -94,7 +94,10 @@ test('search filtra por nombre', function () {
 */
 
 test('crear devuelve 201 con el servicio completo', function () {
-    enviarServicio($this, servicioValido(['descripcion' => 'Tijera y máquina']))
+    $todos = $this->tenant->run(fn () => DB::table('profesionales')->whereNull('deleted_at')
+        ->orderBy('id')->pluck('id')->map(fn ($v) => (int) $v)->all());
+
+    $r = enviarServicio($this, servicioValido(['descripcion' => 'Tijera y máquina']))
         ->assertCreated()
         ->assertJsonPath('data.nombre', 'Corte clásico')
         ->assertJsonPath('data.tipo', 'normal')
@@ -102,8 +105,11 @@ test('crear devuelve 201 con el servicio completo', function () {
         ->assertJsonPath('data.duracion_min', 30)
         ->assertJsonPath('data.activo', true)
         ->assertJsonPath('data.imagen_principal', null)
-        ->assertJsonPath('data.galeria', [])
-        ->assertJsonPath('data.empleados', []);
+        ->assertJsonPath('data.galeria', []);
+
+    // Sin `empleado_ids`, lo presta todo el equipo (Story 1.3).
+    expect($todos)->not->toBe([])
+        ->and(collect($r->json('data.empleados'))->pluck('id')->sort()->values()->all())->toBe($todos);
 });
 
 test('categoria_id vacío significa "sin categoría", no un 422', function () {
@@ -155,6 +161,52 @@ test('asignar y desasignar profesionales', function () {
     enviarServicio($this, servicioValido(['empleado_ids' => []]), $id)
         ->assertOk()
         ->assertJsonPath('data.empleados', []);
+});
+
+/*
+ * Lo nuevo nace ASIGNADO (Story 1.3): el formulario manda `empleado_ids: []` si
+ * no se eligió a nadie, y un servicio sin nadie no se podría agendar. En el
+ * ALTA, ausente o vacío = todos los profesionales vivos. Al EDITAR, `[]` sigue
+ * desasignando (prueba de arriba).
+ */
+test('un servicio nuevo sin profesionales elegidos lo prestan todos', function () {
+    [$todos, $borrado] = $this->tenant->run(function () {
+        DB::table('profesionales')->insert(['nombre' => 'Luis', 'created_at' => now(), 'updated_at' => now()]);
+        $borrado = DB::table('profesionales')->insertGetId([
+            'nombre' => 'Ex', 'deleted_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return [
+            DB::table('profesionales')->whereNull('deleted_at')->orderBy('id')->pluck('id')->map(fn ($v) => (int) $v)->all(),
+            $borrado,
+        ];
+    });
+
+    $vacio = enviarServicio($this, servicioValido(['empleado_ids' => []]))->assertCreated()->json('data');
+    $ausente = enviarServicio($this, servicioValido(['nombre' => 'Afeitado']))->assertCreated()->json('data');
+
+    foreach ([$vacio, $ausente] as $servicio) {
+        expect(collect($servicio['empleados'])->pluck('id')->sort()->values()->all())->toBe($todos)
+            ->and(collect($servicio['empleados'])->pluck('id')->all())->not->toContain($borrado);
+    }
+
+    // Elegir a alguien sigue siendo elegir: no se ensancha.
+    enviarServicio($this, servicioValido(['nombre' => 'Tinte', 'empleado_ids' => [$todos[0]]]))
+        ->assertCreated()
+        ->assertJsonCount(1, 'data.empleados');
+});
+
+test('restaurar un servicio borrado sin elegir a nadie también lo asigna a todos', function () {
+    $todos = $this->tenant->run(fn () => DB::table('profesionales')->whereNull('deleted_at')->pluck('id')->map(fn ($v) => (int) $v)->all());
+
+    $id = enviarServicio($this, servicioValido(['empleado_ids' => []]))->assertCreated()->json('data.id');
+    enviarServicio($this, servicioValido(['empleado_ids' => []]), $id)->assertOk()->assertJsonPath('data.empleados', []);
+    $this->withToken($this->token)->deleteJson('/api/servicios/'.$id)->assertNoContent();
+
+    $nuevo = enviarServicio($this, servicioValido())->assertCreated()->json('data');
+
+    expect($nuevo['id'])->toBe($id)
+        ->and(collect($nuevo['empleados'])->pluck('id')->sort()->values()->all())->toBe(collect($todos)->sort()->values()->all());
 });
 
 /*

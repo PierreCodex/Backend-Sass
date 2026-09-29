@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\Profesional;
 use App\Models\Servicio;
 use App\Models\ServicioImagen;
 use Illuminate\Http\UploadedFile;
@@ -52,7 +53,8 @@ class ServicioService
                  * Se limpia lo que el formulario de alta no puede expresar: no
                  * manda `galeria_conservar` ni `empleado_ids` vacíos ni los
                  * flags, así que la ausencia no puede significar "conserva lo
-                 * de antes".
+                 * de antes". Un `empleado_ids` vacío acaba asignando a todos,
+                 * como cualquier alta (abajo).
                  */
                 $this->vaciarImagenes($borrado);
 
@@ -65,6 +67,18 @@ class ServicioService
                 $servicio = $this->rellenar($borrado, $datos);
             } else {
                 $servicio = $this->rellenar(new Servicio, $datos);
+            }
+
+            /*
+             * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se agenda un
+             * servicio con quien lo presta. El formulario del panel manda
+             * siempre `empleado_ids`, `[]` si no se eligió a nadie, y un
+             * servicio que naciera sin nadie no se podría agendar. En el ALTA,
+             * ausente o vacío = lo prestan todos; el negocio recorta después.
+             * Al editar, `[]` sigue significando «desasignar a todos».
+             */
+            if (($datos['empleado_ids'] ?? []) === []) {
+                $datos['empleado_ids'] = Profesional::pluck('id')->all();
             }
 
             $this->sincronizarProfesionales($servicio, $datos);

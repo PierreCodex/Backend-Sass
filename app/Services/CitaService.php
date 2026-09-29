@@ -49,6 +49,7 @@ class CitaService
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
 
+            $this->exigirReservable($profesional, $servicio, $localId);
             $this->exigirHuecoLibre($negocio, $profesional, $datos, $servicio->duracion_min);
 
             $cita = Cita::create([
@@ -97,6 +98,17 @@ class CitaService
             $servicio = Servicio::findOrFail($datos['servicio_id']);
             $profesional = Profesional::findOrFail($datos['empleado_id']);
             $estadoAnterior = $cita->estado;
+
+            /*
+             * Solo si cambia la PROMESA: quién, qué, dónde o cuándo, o si se
+             * reabre una cita cancelada. Cambiar el estado, las notas, el
+             * monto, el cliente o los productos no promete nada nuevo — y así
+             * la cita de un profesional dado de baja se puede seguir cerrando,
+             * que es justo lo que hay que hacer con ella.
+             */
+            if ($this->cambiaLaPromesa($cita, $profesional, $servicio, $localId, $datos)) {
+                $this->exigirReservable($profesional, $servicio, $localId);
+            }
 
             // Excluyéndose a sí misma: su propio hueco no puede estorbarle.
             $this->exigirHuecoLibre($negocio, $profesional, $datos, $servicio->duracion_min, $cita->id);
@@ -236,8 +248,9 @@ class CitaService
      *   elección.
      *
      * Con `todos_los_locales` (`locales()` = `null`) nada cambia respecto a
-     * antes. Lo que NO mira: que la sede esté activa ni que el profesional o
-     * el servicio estén habilitados en ella (G-3, Story 1.3).
+     * antes. Lo que NO mira: que la sede esté activa. Que el profesional esté
+     * habilitado en ella (y activo, y preste el servicio) lo cierra después
+     * `exigirReservable()` (G-3).
      *
      * 422 en `local_id` y no 403: es el campo que está fuera de alcance, igual
      * que `empleado_id` en el otro eje. La cita ajena sigue siendo 404.
@@ -292,6 +305,85 @@ class CitaService
         }
 
         return (int) $localId;
+    }
+
+    /**
+     * ¿Es reservable esta combinación profesional + servicio + sede? (G-3)
+     *
+     * Sin esto se agendaba con cualquier profesional que existiera: dado de
+     * baja, sin habilitar en la sede de la cita o sin el servicio asignado. Se
+     * le prometía al cliente algo que nadie iba a atender.
+     *
+     * UN solo método para `crear()` y `actualizar()` (NFR-12), llamado después
+     * de resolver la sede (G-2) y antes del anti-solape. Es el sitio donde la
+     * Épica 2 añadirá la dimensión `local_servicio` (FR-67) — aquí, no en una
+     * copia.
+     *
+     * - Profesional inactivo → 422 en `empleado_id`.
+     * - Sede con valor y sin fila `habilitado = true` en `local_profesional`
+     *   → 422 en `empleado_id`. Sin sede (`local_id` NULL: negocio sin
+     *   locales, o cita antigua sin sede) la dimensión sede no aplica.
+     * - Sin fila en `servicio_profesional` → 422 en `servicio_id`, nombrando
+     *   el servicio: es la mitad de la pareja que el usuario puede cambiar.
+     *
+     * Los mensajes no dependen del género del nombre (el panel los pinta tal
+     * cual): nada de «Rosa Paredes está dado de baja».
+     *
+     * Estricto, sin excepción para pivotes vacíos: los datos previos los
+     * rellenó la migración `rellenar_pivotes_de_reservabilidad`, y lo que se
+     * crea después nace asignado (`LocalService`, `ProfesionalService` y
+     * `ServicioService` al crear).
+     *
+     * @throws ValidationException
+     */
+    private function exigirReservable(Profesional $profesional, Servicio $servicio, ?int $localId): void
+    {
+        if (! $profesional->activo) {
+            throw ValidationException::withMessages([
+                'empleado_id' => "La ficha de {$profesional->nombre} está dada de baja: no se le pueden agendar citas.",
+            ]);
+        }
+
+        if ($localId !== null && ! $profesional->locales()
+            ->where('locales.id', $localId)
+            ->wherePivot('habilitado', true)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'empleado_id' => "{$profesional->nombre} no atiende en esa sede.",
+            ]);
+        }
+
+        if (! $profesional->servicios()->where('servicios.id', $servicio->id)->exists()) {
+            throw ValidationException::withMessages([
+                'servicio_id' => "{$profesional->nombre} no presta «{$servicio->nombre}».",
+            ]);
+        }
+    }
+
+    /**
+     * ¿Toca la edición algo de lo que se le prometió al cliente? Profesional,
+     * servicio, sede o inicio, comparados con lo guardado.
+     *
+     * Y REABRIR también promete: una cita `cancelada` que vuelve a un estado
+     * activo le vuelve a prometer al cliente esa hora con ese profesional,
+     * aunque no cambie nada más. Cerrarla (completada, no asistió, cancelada)
+     * no promete nada.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function cambiaLaPromesa(Cita $cita, Profesional $profesional, Servicio $servicio, ?int $localId, array $datos): bool
+    {
+        if ($cita->estado === 'cancelada' && in_array($datos['estado'], ['pendiente', 'confirmada', 'en_curso'], true)) {
+            return true;
+        }
+
+        // El servicio guardado sale de sus líneas: no existe `citas.servicio_id`.
+        $servicioGuardado = $cita->servicios()->value('servicios.id');
+
+        return (int) $cita->profesional_id !== $profesional->id
+            || ($servicioGuardado === null ? null : (int) $servicioGuardado) !== $servicio->id
+            || ($cita->local_id === null ? null : (int) $cita->local_id) !== $localId
+            || $cita->starts_at?->format('Y-m-d H:i') !== $this->inicio($datos)->format('Y-m-d H:i');
     }
 
     /**
