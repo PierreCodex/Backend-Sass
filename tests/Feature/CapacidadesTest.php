@@ -193,15 +193,21 @@ test('un administrador local no puede ascenderse por la puerta de profesionales'
 
     $rolGeneral = $this->tenant->run(fn () => Rol::where('clave', 'admin_general')->value('id'));
 
-    // Llega al endpoint: tiene el permiso. Lo que se le niega es el rol.
+    /*
+     * Llega al endpoint: tiene el permiso. Desde la Story 1.4 (G-4) ni
+     * siquiera llega a elegir rol: dar acceso al panel es solo del general,
+     * así que el 403 salta antes que el 422 del segundo general.
+     */
     comoOtro($this, $token)->post('/api/profesionales', [
         'nombre' => 'Yo mismo',
         'tipo_pago' => 'comision',
         'comision_porcentaje' => 10,
         'usuario' => ['email' => 'ascendido@elrosal.pe', 'rol_id' => $rolGeneral],
     ], ['Accept' => 'application/json'])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors('usuario.rol_id');
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso');
+
+    expect(User::where('email', 'ascendido@elrosal.pe')->withTrashed()->count())->toBe(0);
 
     // Y sigue habiendo exactamente un administrador general.
     $this->tenant->run(function () use ($rolGeneral) {

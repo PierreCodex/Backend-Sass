@@ -212,6 +212,178 @@ test('a quien ya tiene cuenta se le puede dar acceso al editar', function () {
 
 /*
 |--------------------------------------------------------------------------
+| Nadie concede lo que no tiene (Story 1.4, G-4)
+|--------------------------------------------------------------------------
+|
+| `/profesionales` está detrás de `empleados: gestionar`, que el administrador
+| de sede tiene. Dar de alta a un barbero no reparte poder; darle una CUENTA
+| sí: el de sede daba cualquier rol salvo el general —uno propio con
+| Configuración o Facturación— y la cuenta nacía con todas las sedes. Invitar
+| es solo del general, por este camino también.
+*/
+
+/** Un administrador de sede de este negocio (rol `admin_local`), y su token. */
+function profesionalesAdminDeSede(object $test): string
+{
+    $central = User::create([
+        'tenant_id' => $test->tenant->id,
+        'nombre' => 'Lucía',
+        'email' => 'sede@elrosal.pe',
+        'password' => 'secreta123',
+        'rol' => 'admin_local',
+        'email_verified_at' => now(),
+    ]);
+
+    $test->tenant->run(fn () => Usuario::create([
+        'central_user_id' => $central->id,
+        'rol_id' => Rol::where('clave', 'admin_local')->value('id'),
+    ]));
+
+    return $central->createToken('test')->plainTextToken;
+}
+
+test('el administrador de sede no da acceso al panel al crear: 403 y no se crea nada', function () {
+    $token = profesionalesAdminDeSede($this);
+    $rol = rolDe('profesional');
+
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    enviarProfesional($this, profesionalValido([
+        'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => $rol],
+    ]))
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso')
+        ->assertJsonPath('message', 'Solo el administrador general puede hacer esto.');
+
+    // Ni cuenta central, ni fila en el negocio, ni ficha de profesional.
+    expect(User::where('email', 'carmen@elrosal.pe')->withTrashed()->count())->toBe(0);
+
+    $this->tenant->run(function () {
+        expect(Usuario::count())->toBe(2)   // el general y la de sede
+            ->and(Profesional::where('nombre', 'Dra. Carmen Ríos')->count())->toBe(0);
+    });
+
+    Notification::assertNothingSent();
+});
+
+test('el administrador de sede no da acceso al panel al editar: 403 y la ficha no cambia', function () {
+    $id = enviarProfesional($this, profesionalValido())->assertCreated()->json('data.id');
+
+    $token = profesionalesAdminDeSede($this);
+    $rol = rolDe('profesional');
+
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    enviarProfesional($this, profesionalValido([
+        'nombre' => 'Otro nombre',
+        'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => $rol],
+    ]), $id)
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso');
+
+    expect(User::where('email', 'carmen@elrosal.pe')->withTrashed()->count())->toBe(0);
+
+    $this->tenant->run(function () use ($id) {
+        $ficha = Profesional::findOrFail($id);
+
+        expect($ficha->nombre)->toBe('Dra. Carmen Ríos')
+            ->and($ficha->usuario_id)->toBeNull()
+            ->and(Usuario::count())->toBe(2);
+    });
+
+    Notification::assertNothingSent();
+});
+
+/*
+ * El 403 corta ANTES de validar: si el `unique` global del email contestara
+ * primero, el de sede averiguaría si un correo existe en CUALQUIER negocio.
+ */
+test('el administrador de sede con un correo ya registrado recibe 403, no 422', function () {
+    $otro = crearTenantRegistrado(Plan::where('slug', 'prueba')->firstOrFail());
+
+    User::create([
+        'tenant_id' => $otro->id,
+        'nombre' => 'Ya', 'apellido' => 'Existe',
+        'email' => 'carmen@elrosal.pe',
+        'password' => 'secreta123',
+        'rol' => 'profesional',
+    ]);
+
+    $token = profesionalesAdminDeSede($this);
+    $rol = rolDe('profesional');
+
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    enviarProfesional($this, profesionalValido([
+        'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => $rol],
+    ]))
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso')
+        ->assertJsonMissingPath('errors');
+});
+
+test('el administrador de sede con el plan lleno recibe 403, no el 422 del cupo', function () {
+    // Básico: 2. El dueño ya ocupa una; la segunda la llena.
+    $this->tenant->update(['plan_id' => Plan::where('slug', 'basico')->value('id')]);
+    enviarProfesional($this, profesionalValido(['nombre' => 'Uno']))->assertCreated();
+
+    $token = profesionalesAdminDeSede($this);
+    $rol = rolDe('profesional');
+
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    enviarProfesional($this, profesionalValido([
+        'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => $rol],
+    ]))
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso');
+
+    expect(User::where('email', 'carmen@elrosal.pe')->withTrashed()->count())->toBe(0);
+});
+
+test('el administrador de sede sigue dando de alta y editando profesionales SIN cuenta', function () {
+    $token = profesionalesAdminDeSede($this);
+
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    $id = enviarProfesional($this, profesionalValido())
+        ->assertCreated()
+        ->assertJsonPath('data.usuario', null)
+        ->json('data.id');
+
+    enviarProfesional($this, profesionalValido(['nombre' => 'Carmen Ríos']), $id)
+        ->assertOk()
+        ->assertJsonPath('data.nombre', 'Carmen Ríos');
+});
+
+test('el administrador general da acceso con cualquier rol que no sea el general, por los dos caminos', function () {
+    $propio = $this->tenant->run(fn () => Rol::create([
+        'nombre' => 'Recepción con caja',
+        'clave' => null,
+        'sistema' => false,
+        'solo_propios' => false,
+        'permisos' => ['configuracion' => 'gestionar', 'facturacion' => 'ver', 'caja' => 'gestionar'],
+    ])->id);
+
+    enviarProfesional($this, profesionalValido([
+        'usuario' => ['email' => 'carmen@elrosal.pe', 'rol_id' => $propio],
+    ]))->assertCreated()->assertJsonPath('data.usuario.rol.id', $propio);
+
+    $id = enviarProfesional($this, profesionalValido(['nombre' => 'Luis']))->assertCreated()->json('data.id');
+
+    enviarProfesional($this, profesionalValido([
+        'nombre' => 'Luis',
+        'usuario' => ['email' => 'luis@elrosal.pe', 'rol_id' => rolDe('admin_local')],
+    ]), $id)->assertOk()->assertJsonPath('data.usuario.rol.clave', 'admin_local');
+});
+
+/*
+|--------------------------------------------------------------------------
 | Horario
 |--------------------------------------------------------------------------
 */

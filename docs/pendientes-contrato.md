@@ -1933,3 +1933,46 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
   PRD FR-67, NFR-12, hueco G-3.
 - **Estado**: el 422 está **hecho** (2026-09-28); documentarlo en el contrato,
   **pendiente**.
+
+## [Story 1.4] Dar acceso al panel es solo del administrador general: nuevo 403 en `/profesionales`
+
+- **Qué**: `POST /profesionales` con el objeto `usuario`, y `PUT
+  /profesionales/{id}` con `usuario` a una ficha que aún no tiene cuenta,
+  responden **403** si quien pide no es el administrador general:
+
+  ```json
+  { "message": "Solo el administrador general puede hacer esto.", "codigo": "sin_permiso" }
+  ```
+
+  Y **no se crea nada**: ni la ficha, ni la cuenta central, ni la invitación; en
+  el `PUT` la ficha queda como estaba (tampoco se guardan los demás campos del
+  formulario). Sin `usuario`, el administrador de sede sigue dando de alta y
+  editando profesionales como hasta ahora (201 / 200).
+
+  Regla general («nadie concede lo que no tiene», en `App\Support\Rango`):
+  invitar es solo del general (A-1); el rol asignado no puede tener, módulo a
+  módulo, más nivel que el de quien lo asigna (`null` < `ver` < `gestionar`), ni
+  quitar `solo_propios` si quien asigna lo tiene; y el alcance asignado cabe en
+  el suyo. Cualquiera de esos rechazos es **403 `sin_permiso`** (no 422: es
+  falta de permiso, y el panel pinta el mismo aviso). Hoy solo el general
+  invita, así que por HTTP solo se ve el primero; el resto queda fijado para
+  cuando la Story 1.8 abra la asignación de alcance.
+
+  Se mantienen: el 422 en `rol_id` / `usuario.rol_id` si se intenta dar el rol
+  del general («Ya hay un administrador general en este negocio.») y el 422 si
+  se le intenta cambiar el rol al general.
+
+- **Para el frontend**: ocultar «Darle acceso al panel» en la ficha de
+  profesional a quien no sea el administrador general, y pintar el 403 como el
+  resto de avisos `sin_permiso` si llega. Esconder la opción **no es
+  autorización**: el 403 salta igual.
+
+- **Por qué**: con solo `empleados: gestionar`, un administrador de sede creaba
+  cuentas con cualquier rol salvo el general (uno propio con Configuración o
+  Facturación) y con todas las sedes. Hueco G-4.
+
+- **Ref**: `Rango::soloElAdminGeneral()` (también en el `authorize()` de `ProfesionalRequest` y `UsuarioRequest`, que corta antes de validar: un no-general no averigua si un correo existe ni choca con el cupo), `Rango::rolContenido()`,
+  `Rango::alcanceContenido()`, `UsuarioService::crear()` / `actualizar()`.
+  PRD A-1, hueco G-4.
+- **Estado**: el 403 está **hecho** (2026-09-28); documentarlo en el contrato,
+  **pendiente**.

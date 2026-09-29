@@ -9,6 +9,8 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Usuario;
 use App\Notifications\InvitacionNotification;
+use App\Support\Capacidades;
+use App\Support\Rango;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -60,14 +62,31 @@ class UsuarioService
     }
 
     /**
+     * Nadie concede lo que no tiene (G-4): invitar es solo del administrador
+     * general, y el rol y el alcance que recibe la cuenta caben en los de quien
+     * la da. Se comprueba AQUÍ, antes de escribir nada, porque aquí llegan
+     * todos los caminos —`/usuarios` y `/profesionales`—; la regla en sí vive
+     * en `Rango`.
+     *
      * @param  array<string, mixed>  $datos
+     * @param  int  $actorCentralId  el `users.id` de quien da el alta; las
+     *                               capacidades se resuelven aquí, no las trae el llamador
      * @param  string  $campo  dónde cae el 422 (`usuario.rol_id` desde profesionales)
      */
-    public function crear(array $datos, string $campo = 'rol_id'): Usuario
+    public function crear(array $datos, int $actorCentralId, string $campo = 'rol_id'): Usuario
     {
+        Rango::soloElAdminGeneral(User::find($actorCentralId));
+
+        $actor = Capacidades::deUsuarioCentral($actorCentralId);
+
         $rol = Rol::findOrFail($datos['rol_id']);
 
         $this->prohibirAdminGeneral($rol, $campo);
+
+        Rango::rolContenido($actor, $rol);
+        // La cuenta nace con `todos_los_locales` (default de la columna):
+        // asignar un alcance acotado llega con la Story 1.8.
+        Rango::alcanceContenido($actor, null);
 
         $tenant = $this->tenant();
 
@@ -134,13 +153,26 @@ class UsuarioService
         return $this->cargar($usuario);
     }
 
-    /** @param  array<string, mixed>  $datos */
-    public function actualizar(Usuario $usuario, array $datos): Usuario
+    /**
+     * El alcance no se edita aquí (llega con la Story 1.8): solo se comprueba
+     * que el rol asignado quepa en el de quien edita.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    public function actualizar(Usuario $usuario, array $datos, int $actorCentralId): Usuario
     {
+        // Editar cuentas también es solo del general, por cualquier camino: el
+        // candado no puede vivir solo en el controlador.
+        Rango::soloElAdminGeneral(User::find($actorCentralId));
+
+        $actor = Capacidades::deUsuarioCentral($actorCentralId);
+
         $central = User::findOrFail($usuario->central_user_id);
         $rol = Rol::findOrFail($datos['rol_id']);
 
         $this->protegerAlAdminGeneral($usuario, $rol);
+
+        Rango::rolContenido($actor, $rol);
 
         $antes = $central->getOriginal();
 
@@ -171,6 +203,10 @@ class UsuarioService
         if (! $central->activo) {
             $central->tokens()->delete();
         }
+
+        // `protegerAlAdminGeneral` ya cargó el rol VIEJO; sin recargarlo, la
+        // respuesta devolvía el rol de antes del cambio.
+        $usuario->load('rol');
 
         return $this->cargar($usuario);
     }

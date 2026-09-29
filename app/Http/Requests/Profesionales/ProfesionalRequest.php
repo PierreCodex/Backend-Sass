@@ -6,6 +6,7 @@ namespace App\Http\Requests\Profesionales;
 
 use App\Models\Profesional;
 use App\Models\User;
+use App\Support\Rango;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -23,6 +24,28 @@ use Illuminate\Validation\Validator;
  */
 class ProfesionalRequest extends FormRequest
 {
+    /**
+     * Darle acceso al panel es solo del general (G-4), y se corta ANTES de
+     * validar: si no, el `unique` global de `usuario.email` —y el 422 del cupo
+     * en el service— le contestarían primero a un administrador de sede,
+     * filtrando si un correo existe en CUALQUIER negocio.
+     *
+     * Solo cuando de verdad se pediría una cuenta: con `usuario.email` y a una
+     * ficha sin cuenta (a la que ya la tiene, el service ignora `usuario`). La
+     * regla es la de `Rango`; `UsuarioService` la vuelve a llamar.
+     */
+    public function authorize(): bool
+    {
+        $ficha = $this->route('profesional');
+        $sinCuenta = ! $ficha instanceof Profesional || $ficha->usuario_id === null;
+
+        if ($sinCuenta && $this->filled('usuario.email')) {
+            Rango::soloElAdminGeneral($this->user());
+        }
+
+        return true;
+    }
+
     protected function prepareForValidation(): void
     {
         /*

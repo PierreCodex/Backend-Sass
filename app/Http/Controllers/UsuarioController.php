@@ -65,7 +65,7 @@ class UsuarioController extends Controller
         // El candado de «un solo administrador general» vive en el service, que
         // es por donde pasan TODOS los caminos — este y el alta desde
         // /profesionales, que antes lo esquivaba.
-        return CuentaResource::make($this->service->crear($request->validated()))
+        return CuentaResource::make($this->service->crear($request->validated(), $request->user()->id))
             ->response()
             ->setStatusCode(201);
     }
@@ -74,7 +74,7 @@ class UsuarioController extends Controller
     {
         $this->soloElAdminGeneral($request);
 
-        return CuentaResource::make($this->service->actualizar($usuario, $request->validated()));
+        return CuentaResource::make($this->service->actualizar($usuario, $request->validated(), $request->user()->id));
     }
 
     public function destroy(Request $request, Usuario $usuario): JsonResponse
