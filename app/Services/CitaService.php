@@ -100,11 +100,11 @@ class CitaService
             $estadoAnterior = $cita->estado;
 
             /*
-             * Solo si cambia la PROMESA: quién, qué, dónde o cuándo. Cambiar el
-             * estado, las notas, el monto, el cliente o los productos no
-             * promete nada nuevo — y así la cita de un profesional dado de baja
-             * se puede seguir cerrando, que es justo lo que hay que hacer con
-             * ella.
+             * Solo si cambia la PROMESA: quién, qué, dónde o cuándo, o si se
+             * reabre una cita cancelada. Cambiar el estado, las notas, el
+             * monto, el cliente o los productos no promete nada nuevo — y así
+             * la cita de un profesional dado de baja se puede seguir cerrando,
+             * que es justo lo que hay que hacer con ella.
              */
             if ($this->cambiaLaPromesa($cita, $profesional, $servicio, $localId, $datos)) {
                 $this->exigirReservable($profesional, $servicio, $localId);
@@ -364,10 +364,19 @@ class CitaService
      * ¿Toca la edición algo de lo que se le prometió al cliente? Profesional,
      * servicio, sede o inicio, comparados con lo guardado.
      *
+     * Y REABRIR también promete: una cita `cancelada` que vuelve a un estado
+     * activo le vuelve a prometer al cliente esa hora con ese profesional,
+     * aunque no cambie nada más. Cerrarla (completada, no asistió, cancelada)
+     * no promete nada.
+     *
      * @param  array<string, mixed>  $datos
      */
     private function cambiaLaPromesa(Cita $cita, Profesional $profesional, Servicio $servicio, ?int $localId, array $datos): bool
     {
+        if ($cita->estado === 'cancelada' && in_array($datos['estado'], ['pendiente', 'confirmada', 'en_curso'], true)) {
+            return true;
+        }
+
         // El servicio guardado sale de sus líneas: no existe `citas.servicio_id`.
         $servicioGuardado = $cita->servicios()->value('servicios.id');
 

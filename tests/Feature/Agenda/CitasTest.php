@@ -1198,6 +1198,33 @@ test('la cita de un profesional dado de baja no se reprograma: 422 en empleado_i
         ->and($cita->estado)->toBe('pendiente');
 });
 
+/* Reabrir una cancelada vuelve a prometer: pasa por la reservabilidad. */
+test('reabrir la cita cancelada de un profesional dado de baja: 422 y sigue cancelada', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, ['estado' => 'cancelada']))
+        ->assertOk();
+
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, ['estado' => 'confirmada']))
+        ->assertStatus(422)
+        ->assertJsonPath('errors.empleado_id.0', 'La ficha de Rosa Paredes está dada de baja: no se le pueden agendar citas.');
+
+    expect($this->tenant->run(fn () => Cita::find($id)->estado))->toBe('cancelada');
+});
+
+test('reabrir una cita cancelada con un profesional reservable se permite', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, ['estado' => 'cancelada']))
+        ->assertOk();
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, ['estado' => 'pendiente']))
+        ->assertOk()
+        ->assertJsonPath('data.estado', 'pendiente');
+});
+
 test('mover la cita a una sede donde el profesional no atiende: 422', function () {
     [, $norte, $sur] = tresSedes($this);
     $id = agendar($this, ['local_id' => $norte])->assertCreated()->json('data.id');

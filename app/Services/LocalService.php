@@ -45,13 +45,18 @@ class LocalService
              * quien está habilitado en la sede de la cita. Una sede vacía
              * dejaría sin agenda al negocio de una sola sede —la primera pasa a
              * ser la de por defecto—, así que entran todos los profesionales
-             * activos y el negocio recorta después.
+             * y el negocio recorta después.
+             *
+             * También los de BAJA (no los borrados: el modelo los excluye). No
+             * se les agenda mientras sigan inactivos, pero al reactivarlos ya
+             * están en las sedes que se abrieron entretanto, igual que en los
+             * servicios nuevos.
              */
-            $activos = Profesional::where('activo', true)->pluck('id');
+            $profesionales = Profesional::pluck('id');
 
-            if ($activos->isNotEmpty()) {
+            if ($profesionales->isNotEmpty()) {
                 $local->profesionales()->syncWithoutDetaching(
-                    $activos->mapWithKeys(fn ($id) => [$id => ['habilitado' => true]])->all(),
+                    $profesionales->mapWithKeys(fn ($id) => [$id => ['habilitado' => true]])->all(),
                 );
             }
 

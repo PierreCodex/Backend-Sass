@@ -172,6 +172,65 @@ test('un profesional sin ningún servicio pasa a prestarlos todos', function () 
 });
 
 /*
+ * Todos estaban enlazados solo a norte: sur, que antes de G-3 se agendaba, se
+ * quedaría sin nadie. Entra todo el equipo no borrado, también quien está de
+ * baja; norte, que ya tenía gente, no cambia.
+ */
+test('una sede sin ningún profesional habilita a todos', function () {
+    [$norte, $sur, $rosa, $luis] = $this->tenant->run(function () {
+        Profesional::query()->forceDelete();
+
+        $norte = Local::create(['nombre' => 'Norte']);
+        $sur = Local::create(['nombre' => 'Sur']);
+        $rosa = Profesional::create(['nombre' => 'Rosa']);
+        $luis = Profesional::create(['nombre' => 'Luis', 'activo' => false]);
+        $ex = Profesional::create(['nombre' => 'Ex']);
+
+        $rosa->locales()->attach($norte->id, ['habilitado' => true]);
+        $luis->locales()->attach($norte->id, ['habilitado' => false]);
+        $ex->delete();
+
+        return [$norte->id, $sur->id, $rosa->id, $luis->id];
+    });
+
+    rellenarPivotes($this);
+
+    expect(pares($this, 'local_profesional', 'local_id', 'profesional_id'))->toBe([
+        [$norte, $rosa], [$norte, $luis], [$sur, $rosa], [$sur, $luis],
+    ]);
+    expect($this->tenant->run(fn () => (bool) DB::table('local_profesional')
+        ->where(['local_id' => $norte, 'profesional_id' => $luis])->value('habilitado')))->toBeFalse()
+        ->and($this->tenant->run(fn () => DB::table('local_profesional')
+            ->where('local_id', $sur)->where('habilitado', false)->count()))->toBe(0);
+});
+
+/*
+ * La sede vacía es el último recurso: si un profesional sin sede ya la ocupa al
+ * rellenarse, no está vacía y los demás no se ensanchan.
+ */
+test('la sede que ocupa un profesional sin sede ya no cuenta como vacía', function () {
+    [$norte, $sur, $rosa, $ana] = $this->tenant->run(function () {
+        Profesional::query()->forceDelete();
+
+        $norte = Local::create(['nombre' => 'Norte']);
+        $sur = Local::create(['nombre' => 'Sur']);
+        $rosa = Profesional::create(['nombre' => 'Rosa']);
+        $ana = Profesional::create(['nombre' => 'Ana']);
+
+        $rosa->locales()->attach($norte->id, ['habilitado' => true]);
+
+        return [$norte->id, $sur->id, $rosa->id, $ana->id];
+    });
+
+    rellenarPivotes($this);
+
+    // Ana (sin sede) entra en las dos; Rosa sigue solo en norte.
+    expect(pares($this, 'local_profesional', 'local_id', 'profesional_id'))->toBe([
+        [$norte, $rosa], [$norte, $ana], [$sur, $ana],
+    ]);
+});
+
+/*
  * Los tres conjuntos «vacíos» se calculan antes de insertar: el servicio vacío
  * no puede «llenar» al profesional vacío y dejarlo con un solo servicio.
  */

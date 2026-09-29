@@ -19,14 +19,23 @@ use Illuminate\Support\Facades\DB;
 //     todos los profesionales;
 //   - un profesional sin ningún servicio en `servicio_profesional` → presta
 //     todos los servicios (si no, quien antes lo agendaba todo no agendaría
-//     nada tras desplegar).
+//     nada tras desplegar);
+//   - una sede sin ningún profesional en `local_profesional` → habilita a todos
+//     los profesionales (si todos estaban enlazados solo a otra sede, esta, que
+//     hasta hoy se agendaba, se quedaría sin nadie).
 // Lo que ya tiene filas no se toca: una asignación deliberada no se ensancha.
 // Una fila que solo apunta a algo BORRADO no cuenta como asignación: quien solo
 // tenía una sede cerrada, o un servicio cuyo único profesional se fue, está tan
 // vacío como si no tuviera nada.
-// Los tres conjuntos «vacíos» se calculan ANTES de insertar nada: si no, el
+// Los conjuntos de servicios se calculan ANTES de insertar nada: si no, el
 // relleno de un servicio vacío le daría un servicio al profesional vacío y este
-// se quedaría sin los demás.
+// se quedaría sin los demás. La sede vacía es al revés: se calcula DESPUÉS de
+// rellenar a los profesionales sin sede, porque es el último recurso — si uno de
+// ellos ya la ocupa, no está vacía, y meter en ella a todos ensancharía la
+// asignación deliberada de los demás.
+//
+// Todo en UNA transacción: si fallara a medias, al relanzarla lo ya insertado
+// haría que un conjunto dejara de contar como vacío y se quedara incompleto.
 //
 // Sin modelos Eloquent (el modelo de mañana no es el de hoy) y sin nada
 // borrado. `insertOrIgnore` sobre los UNIQUE de los pivotes: dos pasadas dan
@@ -37,6 +46,11 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     public function up(): void
+    {
+        DB::transaction(fn () => $this->rellenar());
+    }
+
+    private function rellenar(): void
     {
         $ahora = now();
 
@@ -70,6 +84,28 @@ return new class extends Migration
 
         foreach ($sinSedes as $profesionalId) {
             $filas = $locales->map(fn ($localId) => [
+                'local_id' => $localId,
+                'profesional_id' => $profesionalId,
+                'habilitado' => true,
+                'created_at' => $ahora,
+                'updated_at' => $ahora,
+            ])->all();
+
+            if ($filas !== []) {
+                DB::table('local_profesional')->insertOrIgnore($filas);
+            }
+        }
+
+        $sedesVacias = DB::table('locales')
+            ->whereNull('deleted_at')
+            ->whereNotExists(fn ($q) => $q->from('local_profesional')
+                ->join('profesionales', 'profesionales.id', '=', 'local_profesional.profesional_id')
+                ->whereNull('profesionales.deleted_at')
+                ->whereColumn('local_profesional.local_id', 'locales.id'))
+            ->pluck('id');
+
+        foreach ($sedesVacias as $localId) {
+            $filas = $profesionales->map(fn ($profesionalId) => [
                 'local_id' => $localId,
                 'profesional_id' => $profesionalId,
                 'habilitado' => true,

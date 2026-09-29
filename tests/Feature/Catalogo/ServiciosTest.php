@@ -206,7 +206,7 @@ test('restaurar un servicio borrado sin elegir a nadie también lo asigna a todo
     $nuevo = enviarServicio($this, servicioValido())->assertCreated()->json('data');
 
     expect($nuevo['id'])->toBe($id)
-        ->and(collect($nuevo['empleados'])->pluck('id')->all())->toBe($todos);
+        ->and(collect($nuevo['empleados'])->pluck('id')->sort()->values()->all())->toBe(collect($todos)->sort()->values()->all());
 });
 
 /*

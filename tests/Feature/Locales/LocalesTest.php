@@ -74,22 +74,22 @@ test('el primer local nace como principal; el segundo, no', function () {
  * habilitado en la sede. Una sede vacía dejaría sin agenda a un negocio de una
  * sola sede; entran los profesionales activos y el negocio recorta después.
  */
-test('una sede nueva habilita a los profesionales activos, no a los de baja ni a los borrados', function () {
-    [$activo, $inactivo, $borrado] = $this->tenant->run(function () {
+test('una sede nueva habilita a todos los profesionales, también los de baja, no a los borrados', function () {
+    [$activo, $inactivo] = $this->tenant->run(function () {
         $inactivo = Profesional::create(['nombre' => 'De baja', 'activo' => false]);
         $borrado = Profesional::create(['nombre' => 'Borrado']);
         $borrado->delete();
 
         // El dueño independiente ya tiene ficha activa desde el provisioning.
-        return [Profesional::where('activo', true)->value('id'), $inactivo->id, $borrado->id];
+        return [Profesional::where('activo', true)->value('id'), $inactivo->id];
     });
 
     $id = enviarLocal($this, localValido())->assertCreated()->json('data.id');
 
-    $filas = $this->tenant->run(fn () => DB::table('local_profesional')->where('local_id', $id)->get());
+    $filas = $this->tenant->run(fn () => DB::table('local_profesional')->where('local_id', $id)->orderBy('profesional_id')->get());
 
-    expect($filas->pluck('profesional_id')->map(fn ($v) => (int) $v)->all())->toBe([$activo])
-        ->and((bool) $filas->first()->habilitado)->toBeTrue();
+    expect($filas->pluck('profesional_id')->map(fn ($v) => (int) $v)->all())->toBe([$activo, $inactivo])
+        ->and($filas->every(fn ($f) => (bool) $f->habilitado))->toBeTrue();
 });
 
 test('`es_principal` se ignora aunque se mande a mano', function () {

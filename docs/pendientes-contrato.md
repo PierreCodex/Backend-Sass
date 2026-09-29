@@ -1896,13 +1896,15 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
   `2026_09_28_000001_rellenar_pivotes_de_reservabilidad` habilita en todas las
   sedes a cada profesional **sin ninguna** sede, asigna a todos los
   profesionales cada servicio **sin ningún** profesional, y hace que cada
-  profesional **sin ningún** servicio los preste todos. Lo que ya tenía filas
-  no se toca. Se despliega con `tenants:migrar-provisionados`.
+  profesional **sin ningún** servicio los preste todos; y una sede **sin
+  ningún** profesional (tras lo anterior) habilita a todos. Lo que ya tenía
+  filas no se toca. Se despliega con `tenants:migrar-provisionados`.
 
 - **Lo nuevo nace asignado** (asignaciones por defecto al CREAR; el negocio
   recorta después):
-  - `POST /locales` → la sede nueva habilita a todos los profesionales
-    **activos**.
+  - `POST /locales` → la sede nueva habilita a todos los profesionales no
+    borrados, **también los de baja** (así, al reactivarlos, ya están en las
+    sedes abiertas mientras tanto).
   - `POST /profesionales` → el profesional nuevo queda habilitado en todas las
     sedes y presta todos los servicios.
   - `POST /servicios` (también cuando restaura uno borrado con el mismo nombre)
@@ -1917,7 +1919,9 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
   - `PUT /citas/{id}` que cambia la hora (o profesional, servicio o sede) de una
     cita cuyo servicio se le quitó después al profesional responde ahora
     **422 en `servicio_id`**; cambiar solo estado, notas, monto, cliente o
-    productos sigue funcionando.
+    productos sigue funcionando. **Salvo reabrir**: pasar una cita `cancelada`
+    a `pendiente`, `confirmada` o `en_curso` vuelve a prometerla y sí se
+    comprueba (422 si el profesional ya no es reservable).
 
 - **Para el frontend**: pintar los tres 422 bajo su campo. Los selectores de la
   ficha de cita deberían ofrecer solo combinaciones reservables (Story 1.7),
