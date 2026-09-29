@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Local;
+use App\Models\Profesional;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -37,7 +38,24 @@ class LocalService
              */
             $local->es_principal = Local::where('es_principal', true)->doesntExist();
 
-            return $this->rellenar($local, $datos, $archivos);
+            $local = $this->rellenar($local, $datos, $archivos);
+
+            /*
+             * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se agenda a
+             * quien está habilitado en la sede de la cita. Una sede vacía
+             * dejaría sin agenda al negocio de una sola sede —la primera pasa a
+             * ser la de por defecto—, así que entran todos los profesionales
+             * activos y el negocio recorta después.
+             */
+            $activos = Profesional::where('activo', true)->pluck('id');
+
+            if ($activos->isNotEmpty()) {
+                $local->profesionales()->syncWithoutDetaching(
+                    $activos->mapWithKeys(fn ($id) => [$id => ['habilitado' => true]])->all(),
+                );
+            }
+
+            return $local;
         });
     }
 

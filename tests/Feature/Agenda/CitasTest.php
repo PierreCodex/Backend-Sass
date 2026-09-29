@@ -46,6 +46,9 @@ beforeEach(function () {
             'duracion_min' => 60,
         ]),
     ]);
+
+    // Rosa presta el corte: sin esta fila la cita es imposible (G-3).
+    $this->tenant->run(fn () => $this->profesional->servicios()->attach($this->servicio->id));
 });
 
 afterEach(fn () => limpiarBasesDeTenants());
@@ -68,6 +71,24 @@ function citaValida(object $test, array $extra = []): array
 function agendar(object $test, array $extra = [])
 {
     return $test->withToken($test->token)->postJson('/api/citas', citaValida($test, $extra));
+}
+
+/**
+ * Habilita a todos los profesionales en todas las sedes que existan ahora.
+ *
+ * Desde G-3 una cita con sede solo se agenda si el profesional está habilitado
+ * en ella: cada prueba que crea sedes lo llama después, para que lo único que
+ * pueda dar el 422 sea lo que esa prueba mide.
+ */
+function habilitarEnSedes(object $test): void
+{
+    $test->tenant->run(function () {
+        $sedes = Local::pluck('id')->mapWithKeys(fn ($id) => [$id => ['habilitado' => true]])->all();
+
+        foreach (Profesional::all() as $profesional) {
+            $profesional->locales()->syncWithoutDetaching($sedes);
+        }
+    });
 }
 
 /*
@@ -148,6 +169,7 @@ test('con un solo local la cita se asigna sola a la sede principal', function ()
     // caso de una sede (§2.12), no el de varias.
     $principal = $this->tenant->run(fn () => Local::where('es_principal', true)->value('id')
         ?? tap(new Local(['nombre' => 'Principal']), fn (Local $l) => $l->forceFill(['es_principal' => true])->save())->id);
+    habilitarEnSedes($this);
 
     expect($principal)->not->toBeNull()
         ->and($this->tenant->run(fn () => Local::count()))->toBe(1);
@@ -518,13 +540,24 @@ function cuentaDelNegocio(object $test, array $opciones = []): string
     return $central->createToken('t')->plainTextToken;
 }
 
-/** Un segundo profesional, sin horario propio: hereda el del negocio. */
-function otroProfesional(object $test, string $nombre = 'Luis Ramos'): Profesional
+/**
+ * Un segundo profesional, sin horario propio: hereda el del negocio. Presta el
+ * servicio de la prueba y está habilitado en las sedes que ya existan, salvo
+ * que se pida `reservable: false`.
+ */
+function otroProfesional(object $test, string $nombre = 'Luis Ramos', bool $reservable = true): Profesional
 {
-    return $test->tenant->run(fn () => Profesional::create([
+    $profesional = $test->tenant->run(fn () => Profesional::create([
         'nombre' => $nombre,
         'horario' => null,
     ]));
+
+    if ($reservable) {
+        $test->tenant->run(fn () => $profesional->servicios()->attach($test->servicio->id));
+        habilitarEnSedes($test);
+    }
+
+    return $profesional;
 }
 
 /*
@@ -761,12 +794,16 @@ test('quien solo tiene ver no agenda', function () {
  */
 function tresSedes(object $test): array
 {
-    return $test->tenant->run(fn () => [
+    $sedes = $test->tenant->run(fn () => [
         Local::where('es_principal', true)->value('id')
             ?? tap(new Local(['nombre' => 'Principal']), fn (Local $l) => $l->forceFill(['es_principal' => true])->save())->id,
         Local::create(['nombre' => 'Norte'])->id,
         Local::create(['nombre' => 'Sur'])->id,
     ]);
+
+    habilitarEnSedes($test);
+
+    return $sedes;
 }
 
 /** Una recepcionista (sin `solo_propios`, sin ficha) con el alcance dado. */
@@ -833,6 +870,7 @@ test('sin local_id la principal gana aunque no tenga el id más bajo', function 
 
         return [$norte, $principal];
     });
+    habilitarEnSedes($this);
 
     expect($norte)->toBeLessThan($principal);
 
@@ -1005,6 +1043,304 @@ test('con todos los locales agenda y mueve la cita a cualquier sede', function (
     ]))
         ->assertOk()
         ->assertJsonPath('data.local_id', $norte);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Qué se puede reservar (G-3)
+|--------------------------------------------------------------------------
+*/
+
+/*
+ * El hueco G-3: se agendaba con cualquier profesional que existiera — dado de
+ * baja, sin habilitar en la sede o sin el servicio. Se le prometía al cliente
+ * algo que nadie iba a atender.
+ */
+
+test('una combinación reservable se agenda en su sede', function () {
+    [, $norte] = tresSedes($this);
+
+    agendar($this, ['local_id' => $norte])
+        ->assertCreated()
+        ->assertJsonPath('data.local_id', $norte)
+        ->assertJsonPath('data.empleado.nombre', 'Rosa Paredes');
+});
+
+test('un profesional dado de baja no recibe citas: 422 en empleado_id', function () {
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    agendar($this)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'La ficha de Rosa Paredes está dada de baja: no se le pueden agendar citas.');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
+test('un profesional sin fila en la sede no recibe citas en ella', function () {
+    [, $norte, $sur] = tresSedes($this);
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)->locales()->detach($sur));
+
+    agendar($this, ['local_id' => $sur])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'Rosa Paredes no atiende en esa sede.');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+
+    // En la suya sí.
+    agendar($this, ['local_id' => $norte])->assertCreated();
+});
+
+test('un profesional deshabilitado en la sede no recibe citas en ella', function () {
+    [, , $sur] = tresSedes($this);
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)
+        ->locales()->updateExistingPivot($sur, ['habilitado' => false]));
+
+    agendar($this, ['local_id' => $sur])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'Rosa Paredes no atiende en esa sede.');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
+test('un profesional que no presta el servicio: 422 en servicio_id, nombrándolo', function () {
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)->servicios()->detach());
+
+    agendar($this)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('servicio_id')
+        ->assertJsonMissingValidationErrors('empleado_id')
+        ->assertJsonPath('errors.servicio_id.0', 'Rosa Paredes no presta «Corte de cabello».');
+
+    expect($this->tenant->run(fn () => Cita::count()))->toBe(0);
+});
+
+/* Sin sedes la dimensión sede no aplica; activo y servicio, sí. */
+test('en un negocio sin sedes basta con que esté activo y preste el servicio', function () {
+    expect($this->tenant->run(fn () => Local::count()))->toBe(0);
+
+    agendar($this)
+        ->assertCreated()
+        ->assertJsonPath('data.local_id', null);
+});
+
+test('editar a un profesional que no presta el servicio: 422 y la cita no cambia', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+    $otro = otroProfesional($this, reservable: false);
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'empleado_id' => $otro->id,
+        'estado' => 'confirmada',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('servicio_id')
+        ->assertJsonPath('errors.servicio_id.0', 'Luis Ramos no presta «Corte de cabello».');
+
+    $cita = $this->tenant->run(fn () => Cita::find($id));
+    expect($cita->profesional_id)->toBe($this->profesional->id)
+        ->and($cita->estado)->toBe('pendiente');
+});
+
+test('editar a un servicio que el profesional no presta: 422 en servicio_id', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+    $tinte = $this->tenant->run(fn () => Servicio::create([
+        'nombre' => 'Tinte', 'color' => '#00ff00', 'tipo' => 'normal', 'precio' => 80, 'duracion_min' => 60,
+    ]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'servicio_id' => $tinte->id,
+        'estado' => 'pendiente',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonPath('errors.servicio_id.0', 'Rosa Paredes no presta «Tinte».');
+
+    expect($this->tenant->run(fn () => Cita::find($id)->servicios->pluck('id')->all()))
+        ->toBe([$this->servicio->id]);
+});
+
+/*
+ * Al editar solo se comprueba si cambia la PROMESA. La cita de alguien que se
+ * dio de baja se puede seguir cerrando: es justo lo que hay que hacer con ella.
+ */
+test('la cita de un profesional dado de baja se puede cerrar sin moverla', function () {
+    [, $norte] = tresSedes($this);
+    $id = agendar($this, ['local_id' => $norte])->assertCreated()->json('data.id');
+
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'local_id' => $norte,
+        'estado' => 'completada',
+        'notas' => 'Cerrada tras su baja',
+        'monto' => 35,
+    ]))
+        ->assertOk()
+        ->assertJsonPath('data.estado', 'completada');
+});
+
+test('la cita de un profesional dado de baja no se reprograma: 422 en empleado_id', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'hora_inicio' => '12:00',
+        'estado' => 'confirmada',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'La ficha de Rosa Paredes está dada de baja: no se le pueden agendar citas.');
+
+    $cita = $this->tenant->run(fn () => Cita::find($id));
+    expect($cita->starts_at->format('H:i'))->toBe('10:00')
+        ->and($cita->estado)->toBe('pendiente');
+});
+
+test('mover la cita a una sede donde el profesional no atiende: 422', function () {
+    [, $norte, $sur] = tresSedes($this);
+    $id = agendar($this, ['local_id' => $norte])->assertCreated()->json('data.id');
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)->locales()->detach($sur));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'local_id' => $sur,
+        'estado' => 'pendiente',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonPath('errors.empleado_id.0', 'Rosa Paredes no atiende en esa sede.');
+
+    expect($this->tenant->run(fn () => Cita::find($id)->local_id))->toBe($norte);
+});
+
+/* Orden: solo_propios (G-1) → sede (G-2) → reservable (G-3) → hueco. */
+test('solo_propios gana a la reservabilidad', function () {
+    $otro = otroProfesional($this);
+    $token = cuentaDelNegocio($this, ['ficha' => $otro->id]);
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this))
+        ->assertStatus(422)
+        ->assertJsonPath('errors.empleado_id.0', 'Solo puedes agendar citas para ti.');
+});
+
+test('la sede fuera de alcance gana a la reservabilidad', function () {
+    [, $norte, $sur] = tresSedes($this);
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)->locales()->detach($sur));
+    $token = cuentaConSedes($this, [$norte]);
+
+    comoOtro($this, $token)->postJson('/api/citas', citaValida($this, ['local_id' => $sur]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('local_id')
+        ->assertJsonMissingValidationErrors('empleado_id');
+});
+
+test('la reservabilidad gana al hueco ocupado', function () {
+    agendar($this)->assertCreated();
+    $this->tenant->run(fn () => Profesional::find($this->profesional->id)->servicios()->detach());
+
+    agendar($this)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('servicio_id')
+        ->assertJsonMissingValidationErrors('hora_inicio');
+});
+
+/* Sin sede la comparación de la promesa ve NULL contra NULL: no cambia nada. */
+test('la cita sin sede de un profesional dado de baja se puede cerrar', function () {
+    expect($this->tenant->run(fn () => Local::count()))->toBe(0);
+    $id = agendar($this)->assertCreated()->assertJsonPath('data.local_id', null)->json('data.id');
+
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, ['estado' => 'completada']))
+        ->assertOk()
+        ->assertJsonPath('data.estado', 'completada')
+        ->assertJsonPath('data.local_id', null);
+});
+
+/* Mover solo la fecha, a la misma hora, también es reprogramar. */
+test('mover solo la fecha de la cita de un profesional dado de baja: 422', function () {
+    $id = agendar($this)->assertCreated()->json('data.id');
+
+    $this->tenant->run(fn () => Profesional::whereKey($this->profesional->id)->update(['activo' => false]));
+
+    $this->withToken($this->token)->putJson("/api/citas/{$id}", citaValida($this, [
+        'fecha' => '2026-09-08',
+        'estado' => 'pendiente',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('empleado_id')
+        ->assertJsonPath('errors.empleado_id.0', 'La ficha de Rosa Paredes está dada de baja: no se le pueden agendar citas.');
+
+    expect($this->tenant->run(fn () => Cita::find($id)->starts_at->format('Y-m-d H:i')))->toBe(DIA.' 10:00');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Lo nuevo nace asignado (G-3)
+|--------------------------------------------------------------------------
+*/
+
+/*
+ * La primera sede pasa a ser la de por defecto de cada cita: si naciera vacía,
+ * un negocio de una sola sede dejaría de agendar entero.
+ */
+test('la primera sede de un negocio habilita a sus profesionales y se agenda en ella', function () {
+    $sede = $this->withToken($this->token)->postJson('/api/locales', ['nombre' => 'Principal'])
+        ->assertCreated()
+        ->json('data.id');
+
+    agendar($this)
+        ->assertCreated()
+        ->assertJsonPath('data.local_id', $sede);
+});
+
+test('un profesional dado de alta por /profesionales se agenda en cualquier sede y servicio', function () {
+    [, , $sur] = tresSedes($this);
+    $tinte = $this->tenant->run(fn () => Servicio::create([
+        'nombre' => 'Tinte', 'color' => '#00ff00', 'tipo' => 'normal', 'precio' => 80, 'duracion_min' => 60,
+    ]));
+
+    $nuevo = $this->withToken($this->token)->postJson('/api/profesionales', [
+        'nombre' => 'Carla Vega',
+        'tipo_pago' => 'comision',
+        'comision_porcentaje' => 30,
+        'horario' => [
+            ['dia' => 1, 'activo' => 1, 'desde' => '09:00', 'hasta' => '18:00', 'breaks' => []],
+        ],
+    ])->assertCreated()->json('data.id');
+
+    agendar($this, ['empleado_id' => $nuevo, 'servicio_id' => $tinte->id, 'local_id' => $sur])
+        ->assertCreated()
+        ->assertJsonPath('data.local_id', $sur)
+        ->assertJsonPath('data.empleado.nombre', 'Carla Vega');
+});
+
+/*
+ * El formulario manda `empleado_ids: []` si no se eligió a nadie. En el ALTA eso
+ * es «todos»; al EDITAR sigue siendo «nadie», y entonces nadie lo agenda.
+ */
+test('un servicio creado sin elegir a nadie lo presta cada profesional; editado a nadie, no', function () {
+    $servicio = [
+        'nombre' => 'Barba', 'color' => '#0000ff', 'tipo' => 'normal', 'precio' => 20, 'duracion_min' => 30,
+        'empleado_ids' => [],
+    ];
+
+    $id = $this->withToken($this->token)
+        ->post('/api/servicios', $servicio, ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->json('data.id');
+
+    agendar($this, ['servicio_id' => $id])->assertCreated();
+
+    $this->withToken($this->token)
+        ->post("/api/servicios/{$id}", $servicio + ['_method' => 'PUT'], ['Accept' => 'application/json'])
+        ->assertOk()
+        ->assertJsonPath('data.empleados', []);
+
+    agendar($this, ['servicio_id' => $id, 'hora_inicio' => '14:00'])
+        ->assertStatus(422)
+        ->assertJsonPath('errors.servicio_id.0', 'Rosa Paredes no presta «Barba».');
 });
 
 test('las citas de otro negocio: 404, nunca 403', function () {

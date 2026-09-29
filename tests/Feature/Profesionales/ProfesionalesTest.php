@@ -1,9 +1,11 @@
 <?php
 
 use App\Jobs\ProvisionTenantDatabase;
+use App\Models\Local;
 use App\Models\Plan;
 use App\Models\Profesional;
 use App\Models\Rol;
+use App\Models\Servicio;
 use App\Models\User;
 use App\Models\Usuario;
 use App\Notifications\InvitacionNotification;
@@ -82,6 +84,37 @@ test('un profesional SIN cuenta se crea con lo que se sabe de él', function () 
 
     // Ni una fila de más en la central.
     expect(User::where('tenant_id', $this->tenant->id)->count())->toBe(1);
+});
+
+/*
+ * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se le agenda lo que presta
+ * y donde está habilitado. Entra en todas las sedes y con todos los servicios
+ * vivos; el negocio recorta después.
+ */
+test('un profesional nuevo nace habilitado en todas las sedes y con todos los servicios', function () {
+    [$sedes, $servicios] = $this->tenant->run(function () {
+        $norte = Local::create(['nombre' => 'Norte']);
+        $sur = Local::create(['nombre' => 'Sur']);
+        Local::create(['nombre' => 'Cerrada'])->delete();
+
+        $corte = Servicio::create(['nombre' => 'Corte', 'color' => '#ff0000', 'tipo' => 'normal', 'precio' => 30, 'duracion_min' => 60]);
+        $tinte = Servicio::create(['nombre' => 'Tinte', 'color' => '#00ff00', 'tipo' => 'normal', 'precio' => 80, 'duracion_min' => 60]);
+        Servicio::create(['nombre' => 'Retirado', 'color' => '#0000ff', 'tipo' => 'normal', 'precio' => 10, 'duracion_min' => 30])->delete();
+
+        return [[$norte->id, $sur->id], [$corte->id, $tinte->id]];
+    });
+
+    $id = enviarProfesional($this, profesionalValido())->assertCreated()->json('data.id');
+
+    $enSedes = $this->tenant->run(fn () => DB::table('local_profesional')
+        ->where('profesional_id', $id)->where('habilitado', true)
+        ->orderBy('local_id')->pluck('local_id')->map(fn ($v) => (int) $v)->all());
+    $presta = $this->tenant->run(fn () => DB::table('servicio_profesional')
+        ->where('profesional_id', $id)
+        ->orderBy('servicio_id')->pluck('servicio_id')->map(fn ($v) => (int) $v)->all());
+
+    expect($enSedes)->toBe($sedes)
+        ->and($presta)->toBe($servicios);
 });
 
 test('con «darle acceso» se crea la cuenta y se le manda la invitación', function () {

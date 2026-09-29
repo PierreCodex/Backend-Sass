@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\Local;
 use App\Models\Profesional;
+use App\Models\Servicio;
 use App\Models\Tenant;
 use App\Models\Usuario;
 use Illuminate\Http\UploadedFile;
@@ -43,11 +45,31 @@ class ProfesionalService
          */
         $usuario = $this->cuentaSiSePide($datos);
 
-        $profesional = DB::transaction(fn () => $this->rellenar(
-            new Profesional(['usuario_id' => $usuario?->id]),
-            $datos,
-            $archivos,
-        ));
+        $profesional = DB::transaction(function () use ($usuario, $datos, $archivos) {
+            $profesional = $this->rellenar(
+                new Profesional(['usuario_id' => $usuario?->id]),
+                $datos,
+                $archivos,
+            );
+
+            /*
+             * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se le agenda
+             * lo que presta y donde está habilitado. Una ficha sin pivotes no
+             * podría recibir ni una cita, así que entra en todas las sedes y
+             * con todos los servicios, y el negocio recorta después.
+             */
+            $sedes = Local::pluck('id');
+
+            if ($sedes->isNotEmpty()) {
+                $profesional->locales()->syncWithoutDetaching(
+                    $sedes->mapWithKeys(fn ($id) => [$id => ['habilitado' => true]])->all(),
+                );
+            }
+
+            $profesional->servicios()->syncWithoutDetaching(Servicio::pluck('id')->all());
+
+            return $profesional;
+        });
 
         return $this->cargar($profesional);
     }

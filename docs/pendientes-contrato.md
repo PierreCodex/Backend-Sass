@@ -1862,3 +1862,70 @@ real de dos peticiones simultáneas, que no se puede reproducir en la suite.
   PRD NFR-12, hueco G-2.
 - **Estado**: el 422 está **hecho** (2026-09-28); documentarlo en el contrato,
   **pendiente**.
+
+---
+
+## [Story 1.3] No se agendan citas imposibles: nuevos 422 en `empleado_id` y `servicio_id`
+
+- **Qué**: `POST /citas` y `PUT /citas/{id}` pueden responder **422** cuando la
+  combinación profesional + servicio + sede no es reservable. Tres mensajes,
+  para pintarlos tal cual:
+  - En **`empleado_id`**: «La ficha de {Nombre} está dada de baja: no se le
+    pueden agendar citas.» — el profesional tiene `activo = false`. Ningún
+    mensaje depende del género del nombre.
+  - En **`empleado_id`**: «{Nombre} no atiende en esa sede.» — la cita tiene
+    sede y el profesional no tiene fila `habilitado = true` en
+    `local_profesional` para ella. Sin sede (`local_id` NULL: negocio sin
+    locales, o cita antigua sin sede) no aplica.
+  - En **`servicio_id`**: «{Nombre} no presta «{Servicio}».» — no hay fila en
+    `servicio_profesional`. Va en el servicio porque es la mitad de la pareja
+    que el usuario puede cambiar para arreglarlo.
+
+  Orden de los chequeos: `solo_propios` (G-1) → sede en alcance (G-2) →
+  reservable (G-3) → hueco libre. El **404** de la cita ajena sigue ganando.
+
+  En **`PUT`** solo se comprueba si cambia la promesa —profesional, servicio,
+  sede o inicio— respecto a lo guardado. Cambiar estado, notas, monto, cliente
+  o productos no la comprueba: la cita de un profesional dado de baja se puede
+  seguir cerrando, pero no reprogramar.
+
+- **Por qué**: se agendaba con cualquier profesional que existiera — dado de
+  baja, sin habilitar en la sede o sin el servicio. Hueco G-3.
+
+- **Datos existentes**: la migración de tenant
+  `2026_09_28_000001_rellenar_pivotes_de_reservabilidad` habilita en todas las
+  sedes a cada profesional **sin ninguna** sede, asigna a todos los
+  profesionales cada servicio **sin ningún** profesional, y hace que cada
+  profesional **sin ningún** servicio los preste todos. Lo que ya tenía filas
+  no se toca. Se despliega con `tenants:migrar-provisionados`.
+
+- **Lo nuevo nace asignado** (asignaciones por defecto al CREAR; el negocio
+  recorta después):
+  - `POST /locales` → la sede nueva habilita a todos los profesionales
+    **activos**.
+  - `POST /profesionales` → el profesional nuevo queda habilitado en todas las
+    sedes y presta todos los servicios.
+  - `POST /servicios` (también cuando restaura uno borrado con el mismo nombre)
+    con `empleado_ids` **ausente o vacío** → lo prestan todos los
+    profesionales. Al **editar** (`PUT /servicios/{id}`), `empleado_ids: []`
+    sigue significando «desasignar a todos».
+  - El formulario de alta de servicio puede seguir mandando `[]` cuando no se
+    elige a nadie; la ficha debería explicar que eso significa «todos».
+  - `POST /profesionales` con `activo: false` también recibe todas las sedes y
+    todos los servicios (no se le agenda mientras siga inactivo, pero al
+    reactivarlo ya está asignado).
+  - `PUT /citas/{id}` que cambia la hora (o profesional, servicio o sede) de una
+    cita cuyo servicio se le quitó después al profesional responde ahora
+    **422 en `servicio_id`**; cambiar solo estado, notas, monto, cliente o
+    productos sigue funcionando.
+
+- **Para el frontend**: pintar los tres 422 bajo su campo. Los selectores de la
+  ficha de cita deberían ofrecer solo combinaciones reservables (Story 1.7),
+  pero esconder opciones **no es autorización**: el 422 salta igual.
+
+- **Ref**: `CitaService::exigirReservable()`, `CitaService::cambiaLaPromesa()`,
+  `LocalService::crear()`, `ProfesionalService::crear()`,
+  `ServicioService::crear()`.
+  PRD FR-67, NFR-12, hueco G-3.
+- **Estado**: el 422 está **hecho** (2026-09-28); documentarlo en el contrato,
+  **pendiente**.
