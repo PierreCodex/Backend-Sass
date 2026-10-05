@@ -81,7 +81,10 @@ los necesitan, se turnan o cada uno usa su propia base.
 - **Antes de mergear:** `bmad-code-review`. **Al cerrar una épica:**
   `bmad-retrospective`.
 - **Una rama por historia**, salida de `main`: `sprint-1/1-1-descripcion-corta`.
-  Merge con `--no-ff` para que cada historia sea revertible de un tirón.
+- **A `main` solo por Pull Request, la aprueba Jean** (desde el 2026-10-05).
+  `main` está protegido: nada de merge local ni push directo. Se sube la rama,
+  se abre la PR con la spec y el resultado de la revisión y la suite, y Jean
+  la mergea con «Create a merge commit» (cada historia, revertible de un tirón).
 - **Un responsable por historia.** El reparto está en
   `sprint-status.yaml` → `preparacion.listo_para_desarrollar` (`agente:`).
 - **Al terminar**, actualizar el estado de esa historia en `sprint-status.yaml`
