@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Models\Rol;
 use App\Models\User;
 
 /**
@@ -43,8 +44,118 @@ final class Rango
             return;
         }
 
+        self::sinPermiso('Solo el administrador general puede hacer esto.');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Nadie concede lo que no tiene (Story 1.4, hueco G-4)
+    |--------------------------------------------------------------------------
+    |
+    | `/usuarios` ya era solo del general, pero `/profesionales` creaba cuentas
+    | por debajo con solo `empleados: gestionar`: un administrador de sede daba
+    | cualquier rol salvo el general —uno propio con Configuración o
+    | Facturación— y la cuenta nacía con todas las sedes. La regla vive aquí y
+    | la llama `UsuarioService`, que es por donde pasan TODOS los caminos que
+    | crean o editan una cuenta. Nunca una copia en un controlador.
+    |
+    | Invitar (crear una cuenta) y editar cuentas es solo del general (A-1), y
+    | eso lo decide `soloElAdminGeneral`: una sola definición de «general».
+    |
+    | 403 `sin_permiso` también para «concede más» y no 422: es falta de
+    | permiso, no un dato mal escrito, y el panel pinta el mismo aviso.
+    */
+
+    /**
+     * El rol que se asigna no puede tener más de lo que tiene quien lo asigna.
+     *
+     * Módulo a módulo, el nivel del rol no supera el del actor
+     * (`null` < `ver` < `gestionar`); y si el actor solo ve lo suyo, el rol
+     * también. El general no necesita excepción: con `gestionar` en los 14
+     * módulos y sin `solo_propios`, cumple por sí solo. Que no fabrique un
+     * segundo general lo cuida `UsuarioService` con su 422 de siempre.
+     */
+    public static function rolContenido(Capacidades $actor, Rol $rol): void
+    {
+        self::exigirCuenta($actor);
+
+        $suyos = $actor->permisos();
+
+        foreach ($rol->permisosCompletos() as $modulo => $nivel) {
+            if (self::nivel($nivel) > self::nivel($suyos[$modulo] ?? null)) {
+                self::sinPermiso('No puedes asignar un rol con permisos que tú no tienes.');
+            }
+        }
+
+        if ($actor->soloPropios() && ! $rol->solo_propios) {
+            self::sinPermiso('No puedes asignar un rol que ve más allá de lo propio: tú solo ves lo tuyo.');
+        }
+    }
+
+    /**
+     * El alcance que se asigna cabe en el de quien lo asigna.
+     *
+     * `$locales` con la misma convención que `Capacidades::locales()`: `null`
+     * es `todos_los_locales`, una lista son esas sedes. Todas las sedes solo
+     * si el actor las tiene; una lista, solo con sedes de su alcance.
+     *
+     * @param  list<int|string>|null  $locales
+     */
+    public static function alcanceContenido(Capacidades $actor, ?array $locales): void
+    {
+        self::exigirCuenta($actor);
+
+        $suyas = $actor->locales();
+
+        if ($suyas === null) {
+            return;
+        }
+
+        if ($locales === null) {
+            self::sinPermiso('No puedes dar acceso a todas las sedes: tú no lo tienes.');
+        }
+
+        $suyas = array_map('intval', $suyas);
+        $ajenas = array_diff(array_map('intval', $locales), $suyas);
+
+        if ($ajenas !== []) {
+            self::sinPermiso('No puedes dar acceso a una sede que no es tuya.');
+        }
+    }
+
+    /**
+     * Falla cerrado sin cuenta en el negocio.
+     *
+     * Sin cuenta, `Capacidades` no tiene matriz (`permisos()` vacío; con un rol
+     * siempre trae los 14 módulos) y `locales()` es `null`, que se leería como
+     * «todas las sedes»: sin esto, quien no es nadie aquí pasaría las dos
+     * reglas.
+     */
+    private static function exigirCuenta(Capacidades $actor): void
+    {
+        if ($actor->permisos() === []) {
+            self::sinPermiso('Sin una cuenta en este negocio no puedes conceder nada.');
+        }
+    }
+
+    /** `null` < `ver` < `gestionar`. Un nivel desconocido no suma. */
+    private static function nivel(?string $nivel): int
+    {
+        return match ($nivel) {
+            'gestionar' => 2,
+            'ver' => 1,
+            default => 0,
+        };
+    }
+
+    /**
+     * El mismo cuerpo de 403 para todos los guardias de rango, con el MISMO
+     * `codigo` que el middleware `puede` (ver `soloElAdminGeneral`).
+     */
+    private static function sinPermiso(string $mensaje): never
+    {
         abort(response()->json([
-            'message' => 'Solo el administrador general puede hacer esto.',
+            'message' => $mensaje,
             'codigo' => 'sin_permiso',
         ], 403));
     }

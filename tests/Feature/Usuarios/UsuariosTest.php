@@ -294,6 +294,32 @@ test('nadie se asciende a administrador general: ya hay uno', function () {
     ]))
         ->assertStatus(422)
         ->assertJsonPath('errors.rol_id.0', 'Ya hay un administrador general en este negocio.');
+
+    expect(User::where('email', 'recepcion@elrosal.pe')->withTrashed()->count())->toBe(0);
+});
+
+/*
+ * Nadie concede lo que no tiene (Story 1.4): el general lo tiene todo, así que
+ * da cualquier rol que no sea el suyo — también uno propio con Configuración y
+ * Facturación, que es justo lo que al de sede se le cierra.
+ */
+test('el administrador general da y cambia cualquier rol que no sea el general', function () {
+    $propio = $this->tenant->run(fn () => Rol::create([
+        'nombre' => 'Contabilidad',
+        'clave' => null,
+        'sistema' => false,
+        'solo_propios' => false,
+        'permisos' => ['configuracion' => 'gestionar', 'facturacion' => 'gestionar'],
+    ])->id);
+
+    $id = $this->withToken($this->token)->postJson('/api/usuarios', cuentaValida(['rol_id' => $propio]))
+        ->assertCreated()
+        ->assertJsonPath('data.rol.id', $propio)
+        ->json('data.id');
+
+    $this->withToken($this->token)->putJson("/api/usuarios/{$id}", cuentaValida([
+        'rol_id' => $this->tenant->run(fn () => Rol::where('clave', 'profesional')->value('id')),
+    ]))->assertOk()->assertJsonPath('data.rol.clave', 'profesional');
 });
 
 /*

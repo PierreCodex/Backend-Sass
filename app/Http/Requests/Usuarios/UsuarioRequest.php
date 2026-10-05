@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Usuarios;
 
 use App\Models\User;
+use App\Support\Rango;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,6 +20,18 @@ use Illuminate\Validation\Rule;
  */
 class UsuarioRequest extends FormRequest
 {
+    /**
+     * Corta ANTES de validar (como `RolRequest`): si no, el `unique` global del
+     * email le contestaría a un no-general si ese correo existe en CUALQUIER
+     * negocio. La regla es la de `Rango`; el service la vuelve a llamar.
+     */
+    public function authorize(): bool
+    {
+        Rango::soloElAdminGeneral($this->user());
+
+        return true;
+    }
+
     public function rules(): array
     {
         $centralUserId = $this->route('usuario')?->central_user_id;

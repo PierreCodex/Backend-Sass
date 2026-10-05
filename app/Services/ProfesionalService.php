@@ -34,7 +34,7 @@ class ProfesionalService
      * @param  array<string, mixed>  $datos
      * @param  array{foto?: ?UploadedFile}  $archivos
      */
-    public function crear(array $datos, array $archivos): Profesional
+    public function crear(array $datos, array $archivos, int $actorCentralId): Profesional
     {
         $this->validarCupo((bool) ($datos['activo'] ?? true));
 
@@ -43,7 +43,7 @@ class ProfesionalService
          * probable es un email ya registrado y revienta en la central. Mejor
          * que reviente sin haber creado media ficha de profesional.
          */
-        $usuario = $this->cuentaSiSePide($datos);
+        $usuario = $this->cuentaSiSePide($datos, $actorCentralId);
 
         $profesional = DB::transaction(function () use ($usuario, $datos, $archivos) {
             $profesional = $this->rellenar(
@@ -78,7 +78,7 @@ class ProfesionalService
      * @param  array<string, mixed>  $datos
      * @param  array{foto?: ?UploadedFile}  $archivos
      */
-    public function actualizar(Profesional $profesional, array $datos, array $archivos): Profesional
+    public function actualizar(Profesional $profesional, array $datos, array $archivos, int $actorCentralId): Profesional
     {
         $this->validarCupo(
             (bool) ($datos['activo'] ?? $profesional->activo),
@@ -91,7 +91,7 @@ class ProfesionalService
          * endpoint no la toca — eso se edita en `/usuarios`, que es su sitio.
          */
         if ($profesional->usuario_id === null) {
-            $usuario = $this->cuentaSiSePide($datos);
+            $usuario = $this->cuentaSiSePide($datos, $actorCentralId);
 
             if ($usuario !== null) {
                 $profesional->usuario_id = $usuario->id;
@@ -186,9 +186,13 @@ class ProfesionalService
     /**
      * Crea la cuenta si el payload trae `usuario`, y manda la invitación.
      *
+     * Solo si quien pide es el administrador general (G-4): lo decide
+     * `UsuarioService::crear()` con `Rango`, antes de escribir nada, así que un
+     * 403 aquí deja la ficha sin crear ni tocar.
+     *
      * @param  array<string, mixed>  $datos
      */
-    private function cuentaSiSePide(array $datos): ?Usuario
+    private function cuentaSiSePide(array $datos, int $actorCentralId): ?Usuario
     {
         $cuenta = $datos['usuario'] ?? null;
 
@@ -201,7 +205,7 @@ class ProfesionalService
             'email' => $cuenta['email'],
             'telefono' => $datos['telefono'] ?? null,
             'rol_id' => $cuenta['rol_id'],
-        ], 'usuario.rol_id');
+        ], $actorCentralId, 'usuario.rol_id');
     }
 
     /**

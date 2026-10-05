@@ -20,6 +20,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  * Tampoco exige ser administrador general para gestionarlo, al reves que roles y cuentas — dar
  * de alta a un barbero no reparte poder sobre el sistema, y el preset de
  * Administrador trae `empleados: gestionar` justo para esto.
+ *
+ * Lo que SÍ es del general es darle acceso al panel (`usuario` en el payload):
+ * crear una cuenta reparte poder. Esa regla no vive aquí sino en
+ * `UsuarioService` vía `Rango` (G-4), que es por donde pasan todos los caminos.
  */
 class ProfesionalController extends Controller
 {
@@ -72,7 +76,7 @@ class ProfesionalController extends Controller
     {
         $profesional = $this->service->crear($request->validated(), [
             'foto' => $request->file('foto'),
-        ]);
+        ], $request->user()->id);
 
         return ProfesionalResource::make($profesional)->response()->setStatusCode(201);
     }
@@ -83,6 +87,7 @@ class ProfesionalController extends Controller
             $profesional,
             $request->validated(),
             ['foto' => $request->file('foto')],
+            $request->user()->id,
         ));
     }
 
