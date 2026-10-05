@@ -34,8 +34,14 @@ Yape/Plin. Este repo es el **backend: Laravel 12 como API pura**.
   de milagro.
 - **Una rama por módulo**: `sprint-N/modulo` (p. ej. `sprint-1/categorias`),
   salida de `main`. No se mergea hasta que los tests del módulo estén en
-  verde, incluido el de aislación entre tenants. Merge con `--no-ff` para
-  que cada módulo sea revertible de un tirón.
+  verde, incluido el de aislación entre tenants.
+- **A `main` solo se entra por Pull Request, y la aprueba Jean** (desde el
+  2026-10-05, al sumarse Sandro al proyecto). `main` está protegido en GitHub:
+  una aprobación obligatoria, sin force push. Nadie —tampoco un agente— hace
+  merge local ni push directo a `main`: se sube la rama, se abre la PR con la
+  spec de la historia y el resultado de `bmad-code-review` y la suite, y Jean
+  la mergea con «Create a merge commit» (el equivalente de `--no-ff`: cada
+  historia sigue siendo revertible de un tirón).
 
 ## Flujo de trabajo con BMAD Method (desde 2026-09-19)
 

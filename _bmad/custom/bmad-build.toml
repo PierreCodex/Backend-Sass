@@ -8,6 +8,6 @@ persistent_facts = [
   "Para diseñar o revisar endpoints, lee la sección correspondiente de D:/PERSONAL_JEAN/Sass-ChiraFlow/docs/api-contract.md (original único; nunca se edita desde este repo, lo que haga falta cambiar se anota en docs/pendientes-contrato.md).",
   "file:docs/discrepancias.md",
   "Seguridad: las reglas viven en el SERVICE, en un solo sitio, nunca en el controlador ni duplicadas. Permisos por capacidad (middleware puede:modulo,nivel), alcance por sedes y solo_propios en lecturas Y escrituras; nadie concede lo que no tiene (FR-63). Aislamiento entre tenants: 404, nunca 403.",
-  "Git: una rama sprint-N/modulo salida de main; no se mergea sin los tests Pest del módulo en verde, incluido el de aislación entre tenants (A recibe 404 con recursos de B); merge con --no-ff. Nunca editar una migración que ya corrió: cada cambio es un archivo nuevo, desplegado con tenants:migrar-provisionados.",
+  "Git: una rama sprint-N/modulo salida de main; no se mergea sin los tests Pest del módulo en verde, incluido el de aislación entre tenants (A recibe 404 con recursos de B); a main solo se entra por Pull Request, que aprueba y mergea Jean con merge commit (main está protegido: nunca merge local ni push directo). Nunca editar una migración que ya corrió: cada cambio es un archivo nuevo, desplegado con tenants:migrar-provisionados.",
   "PHP: usa el binario de Laragon 8.3 por ruta absoluta (C:/laragon/bin/php/php-8.3.33-nts-Win32-vs16-x64/php.exe), no el php del PATH.",
 ]
