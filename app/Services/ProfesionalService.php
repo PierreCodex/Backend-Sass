@@ -28,6 +28,7 @@ class ProfesionalService
     public function __construct(
         private ImagenService $imagenes,
         private UsuarioService $usuarios,
+        private OnboardingService $onboarding,
     ) {}
 
     /**
@@ -70,6 +71,13 @@ class ProfesionalService
 
             return $profesional;
         });
+
+        /*
+         * Hook de onboarding: el primer profesional marca el paso 3. Después
+         * de la transacción a propósito: si el alta se deshace, el checklist
+         * no puede quedar marcado por algo que no existe.
+         */
+        $this->onboarding->marcar($this->tenant(), 'primer_profesional');
 
         return $this->cargar($profesional);
     }

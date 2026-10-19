@@ -86,6 +86,23 @@ test('un profesional SIN cuenta se crea con lo que se sabe de él', function () 
     expect(User::where('tenant_id', $this->tenant->id)->count())->toBe(1);
 });
 
+test('el primer profesional marca el paso del onboarding', function () {
+    $paso = fn () => collect($this->withToken($this->token)->getJson('/api/onboarding')->json('data.pasos'))
+        ->firstWhere('clave', 'primer_profesional')['completado'];
+
+    expect($paso())->toBeFalse();
+
+    enviarProfesional($this, profesionalValido())->assertCreated();
+
+    expect($paso())->toBeTrue();
+});
+
+test('un alta rechazada no marca el paso del onboarding', function () {
+    enviarProfesional($this, profesionalValido(['nombre' => '']))->assertStatus(422);
+
+    expect($this->tenant->refresh()->onboarding_pasos['primer_profesional'] ?? false)->toBeFalse();
+});
+
 /*
  * Lo nuevo nace ASIGNADO (Story 1.3): desde G-3 solo se le agenda lo que presta
  * y donde está habilitado. Entra en todas las sedes y con todos los servicios
