@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\Profesional;
 use App\Models\Servicio;
 use App\Models\ServicioImagen;
+use App\Models\Tenant;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -21,7 +22,10 @@ class ServicioService
     /** Tope TOTAL de la galería, no por petición. */
     private const MAX_GALERIA = 4;
 
-    public function __construct(private ImagenService $imagenes) {}
+    public function __construct(
+        private ImagenService $imagenes,
+        private OnboardingService $onboarding,
+    ) {}
 
     /**
      * Crear, con una salvedad importante.
@@ -37,7 +41,7 @@ class ServicioService
      */
     public function crear(array $datos, array $archivos): Servicio
     {
-        return DB::transaction(function () use ($datos, $archivos) {
+        $servicio = DB::transaction(function () use ($datos, $archivos) {
             $borrado = Servicio::onlyTrashed()->where('nombre', $datos['nombre'])->first();
 
             if ($borrado !== null) {
@@ -86,6 +90,17 @@ class ServicioService
 
             return $this->cargar($servicio);
         });
+
+        /*
+         * Hook de onboarding: el primer servicio marca el paso 4. Fuera de la
+         * transacción, por lo mismo que en ProfesionalService: solo se marca
+         * lo que de verdad quedó guardado.
+         */
+        /** @var Tenant $tenant */
+        $tenant = tenant();
+        $this->onboarding->marcar($tenant, 'primer_servicio');
+
+        return $servicio;
     }
 
     public function actualizar(Servicio $servicio, array $datos, array $archivos): Servicio

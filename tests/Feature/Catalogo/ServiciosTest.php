@@ -112,6 +112,23 @@ test('crear devuelve 201 con el servicio completo', function () {
         ->and(collect($r->json('data.empleados'))->pluck('id')->sort()->values()->all())->toBe($todos);
 });
 
+test('el primer servicio marca el paso del onboarding', function () {
+    $paso = fn () => collect($this->withToken($this->token)->getJson('/api/onboarding')->json('data.pasos'))
+        ->firstWhere('clave', 'primer_servicio')['completado'];
+
+    expect($paso())->toBeFalse();
+
+    enviarServicio($this, servicioValido())->assertCreated();
+
+    expect($paso())->toBeTrue();
+});
+
+test('un servicio rechazado no marca el paso del onboarding', function () {
+    enviarServicio($this, servicioValido(['tipo' => 'inventado']))->assertStatus(422);
+
+    expect($this->tenant->refresh()->onboarding_pasos['primer_servicio'] ?? false)->toBeFalse();
+});
+
 test('categoria_id vacío significa "sin categoría", no un 422', function () {
     // El select manda "" y el multipart lo entrega como cadena vacía.
     enviarServicio($this, servicioValido(['categoria_id' => '', 'descripcion' => '']))
