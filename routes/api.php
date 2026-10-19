@@ -20,6 +20,7 @@ use App\Http\Controllers\LocalController;
 use App\Http\Controllers\LocalProfesionalController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PerfilController;
+use App\Http\Controllers\Plataforma\AccesoPlataformaController;
 use App\Http\Controllers\ProfesionalController;
 use App\Http\Controllers\Publico\CategoriasNegocioController;
 use App\Http\Controllers\RolController;
@@ -64,6 +65,16 @@ Route::middleware('throttle:20,1')->group(function () {
     // El empleado invitado elige su contrasena. Publico como el reset:
     // todavia no puede iniciar sesion, que es justo lo que viene a arreglar.
     Route::post('/invitacion/aceptar', [InvitacionController::class, 'aceptar']);
+});
+
+/*
+ * Panel de plataforma (prototipo Épica 8): contraseña + código por correo.
+ * Sin tenancy. Límite bajo: pedir códigos manda correos y adivinarlos es
+ * justo lo que hay que frenar.
+ */
+Route::middleware('throttle:5,1')->prefix('plataforma/acceso')->group(function () {
+    Route::post('/codigo', [AccesoPlataformaController::class, 'codigo']);
+    Route::post('/verificar', [AccesoPlataformaController::class, 'verificar']);
 });
 
 /*
