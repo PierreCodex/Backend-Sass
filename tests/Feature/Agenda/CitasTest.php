@@ -747,7 +747,7 @@ test('con solo_propios y sin ficha de profesional no agenda para nadie', functio
 /* Y sin `solo_propios` no cambia nada: la recepcionista agenda para quien sea. */
 test('sin solo_propios se agenda para cualquier profesional', function () {
     $token = cuentaDelNegocio($this, [
-        'rol' => 'Recepción',
+        'rol' => 'Recepcionista',
         'solo_propios' => false,
         'ficha' => null,
     ]);

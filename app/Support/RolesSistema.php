@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Los tres roles que todo negocio recibe al provisionar.
+ * Los cuatro roles que todo negocio recibe al provisionar.
  *
  * Fuente única de la matriz de permisos: los endpoints preguntan por
  * capacidades (`caja.gestionar`), nunca por el rol. Así, el día que el dueño
@@ -24,7 +24,7 @@ final class RolesSistema
      */
     public const MODULOS = [
         'dashboard', 'citas', 'calendario', 'clientes', 'servicios',
-        'inventario', 'caja', 'reportes', 'locales', 'empleados',
+        'inventario', 'caja', 'pagos', 'reportes', 'locales', 'empleados',
         'whatsapp', 'configuracion', 'facturacion', 'soporte',
     ];
 
@@ -67,8 +67,11 @@ final class RolesSistema
                  * El alcance por sedes en sí llega con Locales (Sprint 3). En
                  * un negocio de una sola sede el rol ya se lee bien: es el
                  * encargado del local.
+                 *
+                 * En pantalla se llama «Administrador de sede» desde la Story
+                 * 1.5, que es lo que es. La clave `admin_local` no cambia.
                  */
-                'nombre' => 'Administrador local',
+                'nombre' => 'Administrador de sede',
                 'clave' => 'admin_local',
                 'sistema' => true,
                 'solo_propios' => false,
@@ -80,6 +83,13 @@ final class RolesSistema
                     'servicios' => 'gestionar',
                     'inventario' => 'gestionar',
                     'caja' => 'gestionar',
+                    /*
+                     * Verificar el pago de una cita (Story 1.6). Va aparte de
+                     * `citas` a propósito: agendar no es tocar dinero, y el
+                     * negocio tiene que poder dar lo uno sin lo otro. No es
+                     * `facturacion`, que es la suscripción del negocio.
+                     */
+                    'pagos' => 'gestionar',
                     'reportes' => 'ver',
                     'locales' => 'gestionar',
                     'empleados' => 'gestionar',
@@ -107,6 +117,43 @@ final class RolesSistema
                     'calendario' => 'ver',
                     'clientes' => 'ver',
                     'servicios' => 'ver',
+                ],
+            ],
+            [
+                /*
+                 * Story 1.5: la persona que más usa el panel en un salón, y que
+                 * hasta ahora cada negocio tenía que inventarse —dándole de más
+                 * por comodidad—. Matriz A-1 de la propuesta (§2.3) y PRD FR-64.
+                 *
+                 * Agenda la de todos (no `solo_propios`), atiende a los
+                 * clientes, cobra y verifica pagos. Ve el catálogo, el equipo
+                 * y el stock para poder agendar y responder, pero no los
+                 * cambia. Nada de la empresa: ni configuración ni facturación,
+                 * ni sedes, ni reportes.
+                 *
+                 * «En sus sedes»: el alcance no es del rol sino de cada cuenta
+                 * (`usuarios.todos_los_locales` y `local_usuario`), así que dos
+                 * recepcionistas de sedes distintas comparten este mismo rol.
+                 *
+                 * Va el último para que tenga el mismo id en los negocios
+                 * nuevos que en los que lo reciben por migración.
+                 */
+                'nombre' => 'Recepción',
+                'clave' => 'recepcion',
+                'sistema' => true,
+                'solo_propios' => false,
+                'permisos' => [
+                    'dashboard' => 'ver',
+                    'citas' => 'gestionar',
+                    'calendario' => 'gestionar',
+                    'clientes' => 'gestionar',
+                    'servicios' => 'ver',
+                    'inventario' => 'ver',
+                    'caja' => 'gestionar',
+                    // Decidido el 2026-10-05: «gestionar», no «ver» (antes por error).
+                    'pagos' => 'gestionar',
+                    // «Profesionales» en pantalla: los ve para poder agendarles.
+                    'empleados' => 'ver',
                 ],
             ],
         ];

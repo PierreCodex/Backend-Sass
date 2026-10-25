@@ -127,7 +127,7 @@ final class Rango
      * Falla cerrado sin cuenta en el negocio.
      *
      * Sin cuenta, `Capacidades` no tiene matriz (`permisos()` vacío; con un rol
-     * siempre trae los 14 módulos) y `locales()` es `null`, que se leería como
+     * siempre trae los 15 módulos) y `locales()` es `null`, que se leería como
      * «todas las sedes»: sin esto, quien no es nadie aquí pasaría las dos
      * reglas.
      */

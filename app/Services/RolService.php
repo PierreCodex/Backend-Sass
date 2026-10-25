@@ -58,7 +58,7 @@ class RolService
             'nombre' => $datos['nombre'],
 
             /*
-             * Se guardan solo los modulos CON permiso, no los catorce con
+             * Se guardan solo los modulos CON permiso, no los quince con
              * nulls. Asi el JSON del negocio tiene la misma forma que el de
              * los presets, y un modulo nuevo no aparece «denegado
              * explicitamente» en roles creados antes de que existiera —

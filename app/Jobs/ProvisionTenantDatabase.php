@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  * Se encola al VERIFICAR EL CORREO del dueño — nunca en el registro, sin
  * esperar al onboarding. Idempotente: re-lanzarlo no duplica nada.
  *
- * Pasos: crear la BD (tenant_{id}) → migrar → sembrar los tres roles de
+ * Pasos: crear la BD (tenant_{id}) → migrar → sembrar los cuatro roles de
  * sistema → fila del dueño en `profesionales` (atiende=1, rol dueño) →
  * db_provisionada=1, estado='prueba', prueba de 7 días.
  */

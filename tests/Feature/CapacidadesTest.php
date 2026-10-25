@@ -289,6 +289,36 @@ test('el profesional viene con solo_propios y su matriz recortada', function () 
         ->and($data['permisos']['facturacion'])->toBeNull();
 });
 
+/*
+ * Story 1.6: verificar pagos es un módulo propio, distinto de `citas` y de
+ * `facturacion`. Se declara ya aunque sus endpoints lleguen con la Épica 7:
+ * el catálogo y los roles no dependen de ellos.
+ */
+test('el módulo pagos está en el catálogo con su nivel por rol de sistema', function () {
+    $pagos = fn (string $token) => comoOtro($this, $token)->getJson('/api/capacidades')
+        ->assertOk()
+        ->json('data.permisos.pagos');
+
+    expect(RolesSistema::MODULOS)->toContain('pagos')
+        ->and($pagos($this->token))->toBe('gestionar')
+        ->and($pagos(cuentaCon('admin_local')))->toBe('gestionar')
+        ->and($pagos(cuentaCon('profesional')))->toBeNull();
+});
+
+test('pagos es independiente de citas: se puede agendar sin tocar dinero', function () {
+    $permisos = array_fill_keys(RolesSistema::MODULOS, null);
+    $permisos['citas'] = 'gestionar';
+    $permisos['pagos'] = 'ver';
+
+    $data = comoOtro($this, cuentaCon('profesional', $permisos))->getJson('/api/capacidades')
+        ->assertOk()
+        ->json('data.permisos');
+
+    expect($data['citas'])->toBe('gestionar')
+        ->and($data['pagos'])->toBe('ver')
+        ->and($data['facturacion'])->toBeNull();
+});
+
 test('las sedes asignadas viajan en las capacidades', function () {
     $castilla = $this->tenant->run(fn () => Local::create(['nombre' => 'Castilla'])->id);
 
@@ -302,4 +332,22 @@ test('las sedes asignadas viajan en las capacidades', function () {
 
 test('sin sesión → 401', function () {
     $this->getJson('/api/capacidades')->assertStatus(401);
+});
+
+/*
+ * Story 1.5: una recepcionista entra con el rol de sistema y el panel recibe
+ * su matriz ya resuelta, con los 15 módulos.
+ */
+test('una cuenta de recepción recibe su matriz y ve la agenda de todos', function () {
+    $data = comoOtro($this, cuentaCon('recepcion'))->getJson('/api/capacidades')
+        ->assertOk()
+        ->json('data');
+
+    expect(array_keys($data['permisos']))->toBe(RolesSistema::MODULOS)
+        ->and($data['solo_propios'])->toBeFalse()
+        ->and($data['permisos']['citas'])->toBe('gestionar')
+        ->and($data['permisos']['clientes'])->toBe('gestionar')
+        ->and($data['permisos']['pagos'])->toBe('gestionar')
+        ->and($data['permisos']['configuracion'])->toBeNull()
+        ->and($data['permisos']['facturacion'])->toBeNull();
 });
