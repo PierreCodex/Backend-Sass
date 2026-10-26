@@ -32,7 +32,7 @@ class CapacidadesController extends Controller
         $capacidades = Capacidades::de($request->user());
 
         return response()->json(['data' => [
-            // Los 14 modulos siempre, con `null` donde no hay acceso.
+            // Los 15 modulos siempre, con `null` donde no hay acceso.
             'permisos' => $capacidades->permisos(),
 
             // Ve lo suyo y no lo de sus compañeros. No es un permiso: es sobre

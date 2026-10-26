@@ -20,7 +20,7 @@ class RolResource extends JsonResource
             'nombre' => $this->nombre,
 
             /*
-             * La clave es de solo lectura y solo la traen los tres de sistema.
+             * La clave es de solo lectura y solo la traen los cuatro de sistema.
              * Sale porque el negocio puede RENOMBRARLOS —«Administrador» pasa
              * a «Encargada»— y sin ella el frontend no podria reconocer cual
              * es cual para pintar sus barandillas.
@@ -29,7 +29,7 @@ class RolResource extends JsonResource
             'sistema' => $this->sistema,
 
             /*
-             * SIEMPRE los 14 modulos, con `null` donde no hay acceso, aunque
+             * SIEMPRE los 15 modulos, con `null` donde no hay acceso, aunque
              * el JSON guardado solo tenga tres claves (el preset de
              * Profesional guarda cinco). Mismo criterio que el horario de
              * empleados: si la matriz llegara con huecos, el formulario

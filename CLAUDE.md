@@ -290,8 +290,11 @@ desechable (nunca la de desarrollo), provisionar un tenant, volcar con
 - BD tenant: **NO existe negocio_id** en ninguna tabla (la base ES el negocio)
 - `users` vive en la BD CENTRAL con `tenant_id NOT NULL`. Superadmin/soporte
   van en `platform_admins` (guard propio) — nunca users con tenant NULL
-- **Los tres roles de sistema son `admin_general`, `admin_local` y
-  `profesional`** (renombrados el 2026-09-04; antes `dueno` y `admin`). El
+- **Los cuatro roles de sistema son `admin_general`, `admin_local`,
+  `profesional` y `recepcion`** (renombrados el 2026-09-04; antes `dueno` y
+  `admin`; `recepcion` desde la Story 1.5, y `admin_local` se muestra como
+  «Administrador de sede»). El orden y la lista salen de
+  `Rol::clavesDeSistema()`: no copiarla a mano. El
   general y el local no se distinguían por permisos —una fila, facturación— y
   eso no es un rol distinto: lo que los separa es el **alcance**, uno manda en
   la empresa y el otro en su sede. Por eso el local tampoco toca Configuración,

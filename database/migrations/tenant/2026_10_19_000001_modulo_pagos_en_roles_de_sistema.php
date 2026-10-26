@@ -23,7 +23,13 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::table('roles')->whereIn('clave', ['admin_general', 'admin_local'])->get()
+        // La misma regla que `up()`: al de sede personalizado no se le toca,
+        // tampoco al deshacer. Su `pagos` es ya decisión del negocio.
+        DB::table('roles')
+            ->where(fn ($q) => $q
+                ->where('clave', 'admin_general')
+                ->orWhere(fn ($q) => $q->where('clave', 'admin_local')->whereNull('editado_at')))
+            ->get()
             ->each(function ($rol) {
                 $permisos = json_decode($rol->permisos, true) ?: [];
                 unset($permisos['pagos']);

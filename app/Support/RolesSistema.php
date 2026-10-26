@@ -135,8 +135,13 @@ final class RolesSistema
                  * (`usuarios.todos_los_locales` y `local_usuario`), así que dos
                  * recepcionistas de sedes distintas comparten este mismo rol.
                  *
-                 * Va el último para que tenga el mismo id en los negocios
-                 * nuevos que en los que lo reciben por migración.
+                 * Va el último para no mover los ids de los tres anteriores en
+                 * los negocios nuevos. Su propio id NO es fijo: en un negocio
+                 * que ya tenía roles propios, la migración le da el siguiente
+                 * libre. Se busca siempre por `clave`, nunca por id.
+                 *
+                 * La migración 2026_10_19_000002 copia esta matriz: si se
+                 * cambia aquí, los negocios ya migrados no se enteran.
                  */
                 'nombre' => 'Recepción',
                 'clave' => 'recepcion',

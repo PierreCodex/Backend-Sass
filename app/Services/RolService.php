@@ -14,7 +14,7 @@ class RolService
         $rol = Rol::create($this->normalizar($datos) + [
             // Ninguno de los dos se acepta del cliente. Un rol que inventa el
             // negocio nunca es de sistema y nunca tiene clave: la clave es lo
-            // que el backend usa para reconocer a los tres suyos.
+            // que el backend usa para reconocer a los cuatro suyos.
             'clave' => null,
             'sistema' => false,
         ]);

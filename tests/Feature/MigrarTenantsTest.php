@@ -2,6 +2,7 @@
 
 use App\Jobs\ProvisionTenantDatabase;
 use App\Models\Plan;
+use App\Support\RolesSistema;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -312,4 +313,151 @@ test('el rol de recepción llega a un negocio existente sin tocar sus roles prop
     $tenant->run(fn () => DB::table('migrations')->where('migration', '2026_10_19_000002_rol_de_sistema_recepcion')->delete());
     $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
     expect($tenant->run(fn () => DB::table('roles')->where('clave', 'recepcion')->count()))->toBe(1);
+});
+
+/*
+ * Rebobina un negocio a antes de la 1.5 y le crea los roles propios que se
+ * pidan. Devuelve sus ids por nombre.
+ *
+ * @param  list<string>  $propios
+ * @return array<string, int>
+ */
+function antesDeRecepcion(object $tenant, array $propios): array
+{
+    return $tenant->run(function () use ($propios) {
+        DB::table('roles')->where('clave', 'recepcion')->delete();
+        DB::table('roles')->where('clave', 'admin_local')->update(['nombre' => 'Administrador local']);
+        DB::table('migrations')->where('migration', '2026_10_19_000002_rol_de_sistema_recepcion')->delete();
+
+        return collect($propios)->mapWithKeys(fn (string $nombre) => [$nombre => DB::table('roles')->insertGetId([
+            'nombre' => $nombre,
+            'clave' => null,
+            'sistema' => false,
+            'solo_propios' => false,
+            'permisos' => json_encode(['citas' => 'ver']),
+            'editado_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])])->all();
+    });
+}
+
+/*
+ * `roles.nombre` es único. Un negocio que ya se había hecho su propio
+ * «Administrador de sede» no puede bloquear la migración: si lo hiciera,
+ * `tenants:migrar-provisionados` fallaría en él cada vez y nunca registraría
+ * esta migración ni las siguientes.
+ */
+test('si el negocio ya tiene un rol «Administrador de sede», el de sistema conserva su nombre', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $ids = antesDeRecepcion($tenant, ['Administrador de sede']);
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $tenant->run(function () use ($ids) {
+        expect(DB::table('roles')->where('clave', 'admin_local')->value('nombre'))->toBe('Administrador local')
+            ->and(DB::table('roles')->find($ids['Administrador de sede'])->clave)->toBeNull()
+            ->and(DB::table('roles')->where('clave', 'recepcion')->value('nombre'))->toBe('Recepción')
+            ->and(DB::table('migrations')->where('migration', '2026_10_19_000002_rol_de_sistema_recepcion')->exists())->toBeTrue();
+    });
+});
+
+/*
+ * El nombre de respaldo también puede estar ocupado, y la colación no
+ * distingue mayúsculas ni tildes: «recepcion (SISTEMA)» choca igual.
+ */
+test('si «Recepción» y su nombre de respaldo están ocupados, toma el siguiente libre', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    antesDeRecepcion($tenant, ['Recepción', 'recepcion (SISTEMA)']);
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    expect($tenant->run(fn () => DB::table('roles')->where('clave', 'recepcion')->value('nombre')))
+        ->toBe('Recepción (sistema 2)');
+});
+
+/*
+ * Lo que inserta la migración está fijado en ella, no leído del preset en
+ * vivo: si el preset cambia mañana, los negocios migrados después no reciben
+ * otra cosa.
+ */
+test('la migración de recepción inserta sus propios valores, no los del preset actual', function () {
+    $migracion = file_get_contents(database_path('migrations/tenant/2026_10_19_000002_rol_de_sistema_recepcion.php'));
+
+    expect($migracion)->not->toContain('use App\Support\RolesSistema');
+
+    // Y hoy coinciden con el preset: un negocio migrado queda igual que uno nuevo.
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    antesDeRecepcion($tenant, []);
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $preset = collect(RolesSistema::presets())->firstWhere('clave', 'recepcion');
+    $migrado = $tenant->run(fn () => DB::table('roles')->where('clave', 'recepcion')->first());
+
+    // Sin el orden de las claves: la columna JSON de MySQL las reordena.
+    $migrados = json_decode($migrado->permisos, true);
+    $esperados = $preset['permisos'];
+    ksort($migrados);
+    ksort($esperados);
+
+    expect($migrados)->toBe($esperados)
+        ->and($migrado->nombre)->toBe($preset['nombre'])
+        ->and((bool) $migrado->solo_propios)->toBe($preset['solo_propios']);
+});
+
+/*
+ * Deshacer no puede chocar con un nombre que el negocio ocupó después.
+ */
+test('deshacer recepción no pisa un «Administrador local» que el negocio creó después', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () {
+        DB::table('roles')->insert([
+            'nombre' => 'Administrador local',
+            'clave' => null,
+            'sistema' => false,
+            'solo_propios' => false,
+            'permisos' => json_encode(['citas' => 'ver']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        (require database_path('migrations/tenant/2026_10_19_000002_rol_de_sistema_recepcion.php'))->down();
+
+        expect(DB::table('roles')->where('clave', 'recepcion')->exists())->toBeFalse()
+            ->and(DB::table('roles')->where('clave', 'admin_local')->value('nombre'))->toBe('Administrador de sede');
+    });
+});
+
+/*
+ * Deshacer pagos respeta la misma regla que `up()`: a un administrador de
+ * sede que el negocio personalizó no se le toca.
+ */
+test('deshacer pagos no toca al administrador de sede personalizado', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () {
+        DB::table('roles')->where('clave', 'admin_local')->update(['editado_at' => now()]);
+
+        (require database_path('migrations/tenant/2026_10_19_000001_modulo_pagos_en_roles_de_sistema.php'))->down();
+
+        $pagos = fn (string $clave) => json_decode(DB::table('roles')->where('clave', $clave)->value('permisos'), true)['pagos'] ?? null;
+
+        expect($pagos('admin_general'))->toBeNull()
+            ->and($pagos('admin_local'))->toBe('gestionar');
+    });
 });

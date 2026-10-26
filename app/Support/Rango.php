@@ -71,7 +71,7 @@ final class Rango
      *
      * Módulo a módulo, el nivel del rol no supera el del actor
      * (`null` < `ver` < `gestionar`); y si el actor solo ve lo suyo, el rol
-     * también. El general no necesita excepción: con `gestionar` en los 14
+     * también. El general no necesita excepción: con `gestionar` en los 15
      * módulos y sin `solo_propios`, cumple por sí solo. Que no fabrique un
      * segundo general lo cuida `UsuarioService` con su 422 de siempre.
      */

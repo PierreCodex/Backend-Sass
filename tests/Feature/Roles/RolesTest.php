@@ -51,6 +51,21 @@ test('el listado trae los cuatro roles de sistema, el general primero', function
         ->assertJsonPath('data.3.clave', 'recepcion');
 });
 
+/*
+ * Con roles propios delante en el alfabeto: «Asistente» va antes que
+ * «Recepción» por nombre, pero los de sistema van primero siempre.
+ */
+test('los roles propios van detrás de los cuatro de sistema', function () {
+    $this->withToken($this->token)
+        ->postJson('/api/roles', rolValido(['nombre' => 'Asistente']))
+        ->assertCreated();
+
+    $this->withToken($this->token)->getJson('/api/roles')
+        ->assertOk()
+        ->assertJsonPath('data.3.clave', 'recepcion')
+        ->assertJsonPath('data.4.nombre', 'Asistente');
+});
+
 test('el listado incluye la lista de módulos para pintar la matriz', function () {
     $this->withToken($this->token)->getJson('/api/roles')
         ->assertOk()
