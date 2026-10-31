@@ -107,7 +107,7 @@ test('re-lanzar el job de provisioning es idempotente', function () {
     $tenant->run(function () use ($dueno) {
         expect(DB::table('usuarios')->where('central_user_id', $dueno->id)->count())->toBe(1)
             ->and(DB::table('profesionales')->count())->toBe(1)
-            ->and(DB::table('roles')->count())->toBe(3);
+            ->and(DB::table('roles')->count())->toBe(4);
     });
 });
 
@@ -134,7 +134,7 @@ test('aislación básica: los datos del tenant A no existen en el tenant B', fun
         ->and($clientesEnB)->toBe(0);
 });
 
-test('el provisioning siembra los tres roles de sistema y le da el de general al titular', function () {
+test('el provisioning siembra los cuatro roles de sistema y le da el de general al titular', function () {
     $tenant = crearTenantRegistrado($this->planPrueba);
     $dueno = crearDueno($tenant);
 
@@ -143,9 +143,9 @@ test('el provisioning siembra los tres roles de sistema y le da el de general al
     $tenant->run(function () use ($dueno) {
         $roles = DB::table('roles')->orderBy('id')->get()->keyBy('clave');
 
-        expect($roles->keys()->all())->toBe(['admin_general', 'admin_local', 'profesional']);
+        expect($roles->keys()->all())->toBe(['admin_general', 'admin_local', 'profesional', 'recepcion']);
 
-        // Los tres son de sistema: no se borran nunca (siempre tiene que haber
+        // Los cuatro son de sistema: no se borran nunca (siempre tiene que haber
         // dónde meter a un barbero). Solo el de dueño tampoco se edita.
         $roles->each(fn ($rol) => expect((bool) $rol->sistema)->toBeTrue());
 
@@ -181,5 +181,41 @@ test('un rol en uso no se puede borrar', function () {
     $tenant->run(function () {
         expect(fn () => DB::table('roles')->where('clave', 'admin_general')->delete())
             ->toThrow(QueryException::class);
+    });
+});
+
+/*
+ * Story 1.5: Recepción, tal como la fija la matriz A-1 (§2.3) y el PRD FR-64.
+ */
+test('el rol de recepción trae lo que necesita y nada de la empresa', function () {
+    $tenant = crearTenantRegistrado($this->planPrueba);
+    crearDueno($tenant);
+
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () {
+        $rol = DB::table('roles')->where('clave', 'recepcion')->first();
+        $permisos = json_decode($rol->permisos, true);
+
+        expect($rol->nombre)->toBe('Recepción')
+            ->and((bool) $rol->sistema)->toBeTrue()
+            // Agenda la de todos en su sede, no solo lo suyo.
+            ->and((bool) $rol->solo_propios)->toBeFalse()
+            ->and($permisos['citas'])->toBe('gestionar')
+            ->and($permisos['clientes'])->toBe('gestionar')
+            // Decidido el 2026-10-05: gestionar, no ver.
+            ->and($permisos['pagos'])->toBe('gestionar')
+            // Ve el equipo y el catálogo para agendar, pero no los cambia.
+            ->and($permisos['empleados'])->toBe('ver')
+            ->and($permisos['servicios'])->toBe('ver')
+            // Nada de configuración ni facturación.
+            ->and($permisos['configuracion'] ?? null)->toBeNull()
+            ->and($permisos['facturacion'] ?? null)->toBeNull()
+            ->and($permisos['locales'] ?? null)->toBeNull()
+            ->and($permisos['reportes'] ?? null)->toBeNull();
+
+        // «Administrador de sede» en pantalla; la clave interna no cambia.
+        expect(DB::table('roles')->where('clave', 'admin_local')->value('nombre'))
+            ->toBe('Administrador de sede');
     });
 });

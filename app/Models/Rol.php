@@ -10,8 +10,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Rol del negocio. Vive en la BD del TENANT: un rol que inventa el dueño es
- * dato suyo. Los tres de sistema (`dueno`, `admin`, `profesional`) se siembran
- * al provisionar desde `App\Support\RolesSistema`.
+ * dato suyo. Los cuatro de sistema (`admin_general`, `admin_local`,
+ * `profesional`, `recepcion`) se siembran al provisionar desde
+ * `App\Support\RolesSistema`.
  *
  * Se usa para resolver `clave` → `rol_id` al dar de alta un empleado, para
  * contar el cupo del plan sin salir de la base del negocio, y desde
@@ -45,14 +46,14 @@ class Rol extends Model
     /** @return array<int, string> Las claves de los roles de sistema. */
     public static function clavesDeSistema(): array
     {
-        return ['admin_general', 'admin_local', 'profesional'];
+        return ['admin_general', 'admin_local', 'profesional', 'recepcion'];
     }
 
     /**
-     * La matriz con los 14 módulos, `null` donde no hay acceso.
+     * La matriz con los 15 módulos, `null` donde no hay acceso.
      *
      * El JSON guardado solo trae las claves con permiso (el preset de
-     * Profesional tiene cinco de catorce). Rellenar los huecos aquí, y no en
+     * Profesional tiene cinco de quince). Rellenar los huecos aquí, y no en
      * el cliente, es lo que evita que la lista de módulos exista en dos sitios.
      *
      * @return array<string, string|null>
@@ -84,7 +85,7 @@ class Rol extends Model
     }
 
     /**
-     * Los tres de sistema no se borran ni renombrándolos: son el suelo sobre
+     * Los cuatro de sistema no se borran ni renombrándolos: son el suelo sobre
      * el que se apoyan el provisioning y el cupo del plan.
      */
     public function borrable(): bool

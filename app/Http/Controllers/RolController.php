@@ -40,12 +40,20 @@ class RolController extends Controller
                 $q->where('nombre', 'like', "%{$search}%");
             })
             /*
-             * Los de sistema arriba y en su orden (general, local,
-             * profesional), y los del negocio detrás por nombre. `sistema`
-             * DESC no bastaba: entre los tres el orden lo decidiría el nombre,
-             * y el negocio puede renombrarlos.
+             * Los de sistema arriba y en su orden (general, sede, profesional,
+             * recepción), y los del negocio detrás por nombre. `sistema` DESC
+             * no bastaba: entre ellos el orden lo decidiría el nombre, y el
+             * negocio puede renombrarlos.
+             *
+             * El orden sale de `Rol::clavesDeSistema()`, no de otra lista a
+             * mano: con una copia aquí, Recepción quedó fuera y se ordenaba
+             * entre los roles propios. Invertido porque FIELD da 0 a lo que
+             * no está, y con DESC ese 0 cae al final.
              */
-            ->orderByRaw("FIELD(clave, 'profesional', 'admin_local', 'admin_general') DESC")
+            ->orderByRaw(
+                'FIELD(clave, '.implode(', ', array_fill(0, count(Rol::clavesDeSistema()), '?')).') DESC',
+                array_reverse(Rol::clavesDeSistema())
+            )
             ->orderBy('nombre')
             ->paginate($this->porPagina($request));
 
