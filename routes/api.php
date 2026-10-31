@@ -234,6 +234,8 @@ Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
              * nada suyo que filtrar.
              */
             Route::middleware('puede:citas')->group(function () {
+                Route::get('citas/opciones', [CitaController::class, 'opciones'])
+                    ->middleware('puede:citas,gestionar');
                 Route::get('citas', [CitaController::class, 'index']);
                 Route::get('citas/{cita}', [CitaController::class, 'show']);
             });

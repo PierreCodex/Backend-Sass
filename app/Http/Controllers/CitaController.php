@@ -7,18 +7,132 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Citas\CitaRequest;
 use App\Http\Resources\CitaResource;
 use App\Models\Cita;
+use App\Models\Cliente;
+use App\Models\Local;
+use App\Models\Producto;
 use App\Models\Profesional;
+use App\Models\Servicio;
+use App\Services\ConfiguracionService;
 use App\Services\CitaService;
+use App\Support\Capacidades;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class CitaController extends Controller
 {
     private const RELACIONES = ['cliente', 'profesional', 'servicios', 'productos'];
 
     public function __construct(private CitaService $service) {}
+
+    public function opciones(Request $request): JsonResponse
+    {
+        $capacidades = Capacidades::de($request->user());
+        $locales = $capacidades->locales();
+        $porPagina = min(max($request->integer('per_page', 20), 1), 50);
+
+        $profesionales = Profesional::query()
+            ->where('activo', true)
+            ->when($capacidades->soloPropios(), fn ($q) => $q->whereKey($capacidades->profesional()?->id ?? 0))
+            ->whereHas('locales', function ($q) use ($locales) {
+                $q->where('locales.activo', true)
+                    ->where('local_profesional.habilitado', true)
+                    ->when($locales !== null, fn ($q) => $q->whereIn('locales.id', $locales));
+            })
+            ->with(['servicios' => fn ($q) => $q->where('servicios.activo', true)->select('servicios.id', 'servicios.nombre')])
+            ->orderBy('nombre')
+            ->paginate($porPagina, ['*'], 'profesionales_page');
+
+        $servicios = Servicio::query()->where('servicios.activo', true)
+            ->whereHas('profesionales', function ($q) use ($locales, $capacidades) {
+                $q->where('profesionales.activo', true)
+                    ->when($capacidades->soloPropios(), fn ($q) => $q->whereKey($capacidades->profesional()?->id ?? 0))
+                    ->whereHas('locales', function ($q) use ($locales) {
+                        $q->where('locales.activo', true)
+                            ->where('local_profesional.habilitado', true)
+                            ->when($locales !== null, fn ($q) => $q->whereIn('locales.id', $locales));
+                    });
+            })
+            ->orderBy('nombre')
+            ->paginate($porPagina, ['servicios.id', 'servicios.nombre', 'servicios.duracion_min', 'servicios.precio'], 'servicios_page');
+
+        $localesQuery = Local::query()->where('activo', true)->orderBy('nombre');
+        if ($locales !== null) {
+            $localesQuery->whereIn('id', $locales);
+        }
+
+        $tenant = $request->user()->tenant;
+        $agenda = (array) (($tenant->configuracion ?? [])['agenda'] ?? []);
+        $data = [
+            'profesionales' => $this->pagina($profesionales, fn (Profesional $p) => [
+                'id' => $p->id,
+                'nombre' => $p->nombre,
+                'color' => null,
+                'horario' => $p->horario['dias'] ?? [],
+                'excepciones' => $p->horario['excepciones'] ?? [],
+                'servicios' => $p->servicios->map(fn (Servicio $s) => ['id' => $s->id, 'nombre' => $s->nombre])->values()->all(),
+            ]),
+            'servicios' => $this->pagina($servicios, fn (Servicio $s) => [
+                'id' => $s->id,
+                'nombre' => $s->nombre,
+                'duracion_min' => $s->duracion_min,
+                'precio' => $s->precio,
+            ]),
+            'locales' => $this->pagina($localesQuery->paginate($porPagina, ['id', 'nombre'], 'locales_page'), fn (Local $l) => [
+                'id' => $l->id,
+                'nombre' => $l->nombre,
+            ]),
+            'agenda' => [
+                'modo_intervalo' => $agenda['modo_intervalo'] ?? ConfiguracionService::MODO_INTERVALO,
+                'intervalo_min' => (int) ($agenda['intervalo_min'] ?? ConfiguracionService::INTERVALO_MIN),
+                'zona_horaria' => $tenant->zona_horaria,
+            ],
+        ];
+
+        if ($capacidades->puede('inventario')) {
+            $productos = Producto::query()->where('activo', true)->orderBy('nombre')
+                ->paginate($porPagina, ['id', 'nombre', 'precio as precio_venta', 'stock'], 'productos_page');
+            $data['productos'] = $this->pagina($productos, fn (Producto $p) => [
+                'id' => $p->id,
+                'nombre' => $p->nombre,
+                'precio_venta' => (float) $p->precio_venta,
+                'stock' => $p->stock,
+            ]);
+        }
+
+        if ($capacidades->puede('clientes')) {
+            $clientes = Cliente::query()
+                ->when($request->filled('search'), function ($q) use ($request) {
+                    $search = $request->string('search')->trim()->value();
+                    $q->where(fn ($q) => $q->where('nombre', 'like', "%{$search}%")
+                        ->orWhere('apellido', 'like', "%{$search}%")
+                        ->orWhere('telefono', 'like', "%{$search}%"));
+                })
+                ->orderBy('nombre')->paginate($porPagina, ['id', 'nombre', 'apellido', 'telefono'], 'clientes_page');
+            $data['clientes'] = $this->pagina($clientes, fn (Cliente $c) => [
+                'id' => $c->id,
+                'nombre' => trim($c->nombre.' '.$c->apellido),
+                'telefono' => $c->telefono,
+            ]);
+        }
+
+        return response()->json(['data' => $data]);
+    }
+
+    private function pagina(LengthAwarePaginator $paginator, callable $map): array
+    {
+        return [
+            'data' => collect($paginator->items())->map($map)->values()->all(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ];
+    }
 
     public function index(Request $request): AnonymousResourceCollection
     {
