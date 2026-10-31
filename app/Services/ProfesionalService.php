@@ -34,7 +34,7 @@ class ProfesionalService
      * @param  array<string, mixed>  $datos
      * @param  array{foto?: ?UploadedFile}  $archivos
      */
-    public function crear(array $datos, array $archivos, int $actorCentralId): Profesional
+    public function crear(array $datos, array $archivos, int $actorCentralId, ?array $localesAlcance = null): Profesional
     {
         $this->validarCupo((bool) ($datos['activo'] ?? true));
 
@@ -45,7 +45,7 @@ class ProfesionalService
          */
         $usuario = $this->cuentaSiSePide($datos, $actorCentralId);
 
-        $profesional = DB::transaction(function () use ($usuario, $datos, $archivos) {
+        $profesional = DB::transaction(function () use ($usuario, $datos, $archivos, $localesAlcance) {
             $profesional = $this->rellenar(
                 new Profesional(['usuario_id' => $usuario?->id]),
                 $datos,
@@ -58,7 +58,10 @@ class ProfesionalService
              * podría recibir ni una cita, así que entra en todas las sedes y
              * con todos los servicios, y el negocio recorta después.
              */
-            $sedes = Local::pluck('id');
+            $sedes = Local::query()
+                ->where('activo', true)
+                ->when($localesAlcance !== null, fn ($q) => $q->whereIn('id', $localesAlcance))
+                ->pluck('id');
 
             if ($sedes->isNotEmpty()) {
                 $profesional->locales()->syncWithoutDetaching(
