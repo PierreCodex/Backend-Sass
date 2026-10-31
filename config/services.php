@@ -25,7 +25,8 @@ return [
     ],
 
     'resend' => [
-        'key' => env('RESEND_KEY'),
+        // El proyecto documenta RESEND_API_KEY; se conserva RESEND_KEY por compatibilidad.
+        'key' => env('RESEND_KEY', env('RESEND_API_KEY')),
     ],
 
     'slack' => [

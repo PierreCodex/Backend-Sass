@@ -240,7 +240,7 @@ test('a quien ya tiene cuenta se le puede dar acceso al editar', function () {
 */
 
 /** Un administrador de sede de este negocio (rol `admin_local`), y su token. */
-function profesionalesAdminDeSede(object $test): string
+function profesionalesAdminDeSede(object $test, ?array $locales = null): string
 {
     $central = User::create([
         'tenant_id' => $test->tenant->id,
@@ -251,13 +251,78 @@ function profesionalesAdminDeSede(object $test): string
         'email_verified_at' => now(),
     ]);
 
-    $test->tenant->run(fn () => Usuario::create([
+    $test->tenant->run(function () use ($central, $locales) {
+        $usuario = Usuario::create([
         'central_user_id' => $central->id,
         'rol_id' => Rol::where('clave', 'admin_local')->value('id'),
-    ]));
+            'todos_los_locales' => $locales === null,
+        ]);
+        if ($locales !== null) {
+            $usuario->locales()->sync($locales);
+        }
+    });
 
     return $central->createToken('test')->plainTextToken;
 }
+
+test('el administrador de sede solo lista profesionales habilitados en sus sedes', function () {
+    [$norte, $sur] = $this->tenant->run(fn () => [
+        Local::create(['nombre' => 'Norte', 'activo' => true]),
+        Local::create(['nombre' => 'Sur', 'activo' => true]),
+    ]);
+    $visible = enviarProfesional($this, profesionalValido(['nombre' => 'Visible']))->assertCreated()->json('data.id');
+    $oculto = enviarProfesional($this, profesionalValido(['nombre' => 'Oculto']))->assertCreated()->json('data.id');
+    $deshabilitado = enviarProfesional($this, profesionalValido(['nombre' => 'Deshabilitado']))->assertCreated()->json('data.id');
+    $this->tenant->run(function () use ($visible, $oculto, $deshabilitado, $norte, $sur) {
+        Profesional::find($visible)->locales()->sync([$norte->id => ['habilitado' => true]]);
+        Profesional::find($oculto)->locales()->sync([$sur->id => ['habilitado' => true]]);
+        Profesional::find($deshabilitado)->locales()->sync([$norte->id => ['habilitado' => false]]);
+    });
+
+    $token = profesionalesAdminDeSede($this, [$norte->id]);
+    comoOtro($this, $token)->getJson('/api/profesionales')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $visible)
+        ->assertJsonMissing(['id' => $oculto])
+        ->assertJsonMissing(['id' => $deshabilitado]);
+
+    comoOtro($this, $token)->getJson("/api/profesionales/{$oculto}")->assertNotFound();
+});
+
+test('el administrador de sede no edita ni borra profesionales fuera de su alcance', function () {
+    [$norte, $sur] = $this->tenant->run(fn () => [
+        Local::create(['nombre' => 'Norte', 'activo' => true]),
+        Local::create(['nombre' => 'Sur', 'activo' => true]),
+    ]);
+    $id = enviarProfesional($this, profesionalValido(['nombre' => 'Solo Sur']))->assertCreated()->json('data.id');
+    $this->tenant->run(fn () => Profesional::find($id)->locales()->sync([$sur->id => ['habilitado' => true]]));
+
+    $this->token = profesionalesAdminDeSede($this, [$norte->id]);
+    app('auth')->forgetGuards();
+
+    enviarProfesional($this, profesionalValido(['nombre' => 'Intento']), $id)->assertNotFound();
+    comoOtro($this, $this->token)->deleteJson("/api/profesionales/{$id}")->assertNotFound();
+
+    $this->tenant->run(fn () => expect(Profesional::find($id)->nombre)->toBe('Solo Sur'));
+});
+
+test('el administrador de sede crea un profesional solo en su alcance', function () {
+    [$norte, $sur] = $this->tenant->run(fn () => [
+        Local::create(['nombre' => 'Norte', 'activo' => true]),
+        Local::create(['nombre' => 'Sur', 'activo' => true]),
+    ]);
+    $token = profesionalesAdminDeSede($this, [$norte->id]);
+    app('auth')->forgetGuards();
+    $this->token = $token;
+
+    $id = enviarProfesional($this, profesionalValido(['nombre' => 'Solo Norte']))->assertCreated()->json('data.id');
+
+    $this->tenant->run(function () use ($id, $norte, $sur) {
+        $ids = Profesional::findOrFail($id)->locales()->pluck('locales.id')->all();
+        expect($ids)->toBe([$norte->id])
+            ->and($ids)->not->toContain($sur->id);
+    });
+});
 
 test('el administrador de sede no da acceso al panel al crear: 403 y no se crea nada', function () {
     $token = profesionalesAdminDeSede($this);

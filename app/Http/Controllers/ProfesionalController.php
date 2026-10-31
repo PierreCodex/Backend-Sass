@@ -13,6 +13,7 @@ use App\Services\ProfesionalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Quien presta los servicios. Ya no exige cuenta ni rol: eso es `/usuarios`.
@@ -31,9 +32,15 @@ class ProfesionalController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $profesionales = Profesional::query()
+        $consulta = Profesional::query()
             // Sin esto, una pagina de 10 serian 10 consultas mas (N+1).
-            ->with('usuario.rol')
+            ->with('usuario.rol');
+
+        if ($this->alcanceDeSedes($request) !== null) {
+            $consulta->whereHas('locales', fn (Builder $q) => $this->acotarSedes($q, $request));
+        }
+
+        $profesionales = $consulta
             ->when($request->string('search')->trim()->value(), function ($q, string $search) {
                 $q->where(function ($q) use ($search) {
                     $q->where('nombre', 'like', "%{$search}%")
@@ -69,6 +76,8 @@ class ProfesionalController extends Controller
 
     public function show(Profesional $profesional): ProfesionalResource
     {
+        $this->exigirVisibilidad(request(), $profesional);
+
         return ProfesionalResource::make($this->service->cargar($profesional));
     }
 
@@ -76,13 +85,15 @@ class ProfesionalController extends Controller
     {
         $profesional = $this->service->crear($request->validated(), [
             'foto' => $request->file('foto'),
-        ], $request->user()->id);
+        ], $request->user()->id, $this->alcanceDeSedes($request));
 
         return ProfesionalResource::make($profesional)->response()->setStatusCode(201);
     }
 
     public function update(ProfesionalRequest $request, Profesional $profesional): ProfesionalResource
     {
+        $this->exigirVisibilidad($request, $profesional);
+
         return ProfesionalResource::make($this->service->actualizar(
             $profesional,
             $request->validated(),
@@ -100,8 +111,40 @@ class ProfesionalController extends Controller
      */
     public function destroy(Profesional $profesional): JsonResponse
     {
+        $this->exigirVisibilidad(request(), $profesional);
+
         $this->service->eliminar($profesional);
 
         return response()->json(status: 204);
+    }
+
+    private function acotarSedes(Builder $consulta, Request $request): void
+    {
+        $alcance = $this->alcanceDeSedes($request);
+        if ($alcance === null) {
+            return;
+        }
+
+        $consulta->where('locales.activo', true)
+            ->where('local_profesional.habilitado', true);
+        $consulta->whereIn('locales.id', $alcance);
+    }
+
+    private function exigirVisibilidad(Request $request, Profesional $profesional): void
+    {
+        $alcance = $this->alcanceDeSedes($request);
+        if ($alcance === null) {
+            return;
+        }
+
+        $visible = $profesional->locales()
+            ->where('locales.activo', true)
+            ->wherePivot('habilitado', true)
+            ->whereIn('locales.id', $alcance)
+            ->exists();
+
+        if (! $visible) {
+            abort(404);
+        }
     }
 }

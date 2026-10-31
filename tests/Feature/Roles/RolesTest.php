@@ -40,14 +40,15 @@ function rolValido(array $extra = []): array
 |--------------------------------------------------------------------------
 */
 
-test('el listado trae los tres roles de sistema, el general primero', function () {
+test('el listado trae los cuatro roles de sistema, el general primero', function () {
     $respuesta = $this->withToken($this->token)->getJson('/api/roles');
 
     $respuesta->assertOk()
-        ->assertJsonCount(3, 'data')
+        ->assertJsonCount(4, 'data')
         ->assertJsonPath('data.0.clave', 'admin_general')
         ->assertJsonPath('data.1.clave', 'admin_local')
-        ->assertJsonPath('data.2.clave', 'profesional');
+        ->assertJsonPath('data.2.clave', 'profesional')
+        ->assertJsonPath('data.3.clave', 'recepcion');
 });
 
 test('el listado incluye la lista de módulos para pintar la matriz', function () {
@@ -57,11 +58,11 @@ test('el listado incluye la lista de módulos para pintar la matriz', function (
 });
 
 /*
- * El preset de Profesional guarda cinco claves de catorce. Si el Resource
+ * El preset de Profesional guarda cinco claves de quince. Si el Resource
  * emitiera el JSON crudo, el formulario tendría que conocer la lista de
  * módulos para rellenar los huecos — y acabaría habiendo dos listas.
  */
-test('cada rol emite los 14 módulos aunque su JSON guarde menos', function () {
+test('cada rol emite los 15 módulos aunque su JSON guarde menos', function () {
     $respuesta = $this->withToken($this->token)->getJson('/api/roles');
 
     $profesional = collect($respuesta->json('data'))->firstWhere('clave', 'profesional');
@@ -112,7 +113,7 @@ test('los módulos sin permiso NO se guardan en el JSON, solo se emiten', functi
 
     $guardado = $this->tenant->run(fn () => Rol::where('nombre', 'Recepcionista')->first()->permisos);
 
-    // Cuatro claves guardadas, catorce emitidas.
+    // Cuatro claves guardadas, quince emitidas.
     expect($guardado)->toHaveCount(4)
         ->and($guardado)->not->toHaveKey('reportes');
 });
@@ -261,7 +262,7 @@ test('quien no es administrador general lee los roles, pero no los toca', functi
     ]);
     $token = $admin->createToken('test')->plainTextToken;
 
-    $this->withToken($token)->getJson('/api/roles')->assertOk()->assertJsonCount(3, 'data');
+    $this->withToken($token)->getJson('/api/roles')->assertOk()->assertJsonCount(4, 'data');
 
     $id = $this->tenant->run(fn () => Rol::where('clave', 'admin_local')->value('id'));
     $this->withToken($token)->getJson("/api/roles/{$id}")->assertOk();

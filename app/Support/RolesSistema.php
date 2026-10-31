@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Los tres roles que todo negocio recibe al provisionar.
+ * Los roles que todo negocio recibe al provisionar.
  *
  * Fuente única de la matriz de permisos: los endpoints preguntan por
  * capacidades (`caja.gestionar`), nunca por el rol. Así, el día que el dueño
@@ -25,7 +25,7 @@ final class RolesSistema
     public const MODULOS = [
         'dashboard', 'citas', 'calendario', 'clientes', 'servicios',
         'inventario', 'caja', 'reportes', 'locales', 'empleados',
-        'whatsapp', 'configuracion', 'facturacion', 'soporte',
+        'whatsapp', 'configuracion', 'facturacion', 'soporte', 'pagos',
     ];
 
     /**
@@ -68,7 +68,7 @@ final class RolesSistema
                  * un negocio de una sola sede el rol ya se lee bien: es el
                  * encargado del local.
                  */
-                'nombre' => 'Administrador local',
+                'nombre' => 'Administrador de sede',
                 'clave' => 'admin_local',
                 'sistema' => true,
                 'solo_propios' => false,
@@ -84,6 +84,7 @@ final class RolesSistema
                     'locales' => 'gestionar',
                     'empleados' => 'gestionar',
                     'whatsapp' => 'gestionar',
+                    'pagos' => 'gestionar',
                     /*
                      * Ni configuración ni facturación. La primera es de la
                      * empresa y no de una sede; la segunda no se delega —
@@ -107,6 +108,20 @@ final class RolesSistema
                     'calendario' => 'ver',
                     'clientes' => 'ver',
                     'servicios' => 'ver',
+                ],
+            ],
+            [
+                'nombre' => 'Recepción',
+                'clave' => 'recepcion',
+                'sistema' => true,
+                'solo_propios' => false,
+                // `pagos` se declara aquí para que la migración de la Story
+                // 1.6 pueda exponerlo al añadir el módulo al catálogo.
+                'permisos' => [
+                    'dashboard' => 'ver',
+                    'citas' => 'gestionar',
+                    'clientes' => 'gestionar',
+                    'pagos' => 'gestionar',
                 ],
             ],
         ];

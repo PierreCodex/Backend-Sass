@@ -560,6 +560,101 @@ function otroProfesional(object $test, string $nombre = 'Luis Ramos', bool $rese
     return $profesional;
 }
 
+test('opciones de citas funciona solo con citas y recorta por solo_propios', function () {
+    $this->tenant->run(fn () => Local::create(['nombre' => 'Principal', 'activo' => true, 'es_principal' => true]));
+    habilitarEnSedes($this);
+    $token = cuentaDelNegocio($this, [
+        'permisos' => ['citas' => 'gestionar'],
+        'solo_propios' => true,
+        'ficha' => $this->profesional->id,
+    ]);
+
+    $respuesta = comoOtro($this, $token)->getJson('/api/citas/opciones')->assertOk();
+    $respuesta->assertJsonStructure(['data' => ['profesionales', 'servicios', 'locales', 'agenda']])
+        ->assertJsonCount(1, 'data.profesionales.data')
+        ->assertJsonPath('data.profesionales.data.0.id', $this->profesional->id)
+        ->assertJsonPath('data.profesionales.meta.total', 1);
+    expect($respuesta->json('data'))->not->toHaveKey('productos')
+        ->and($respuesta->json('data'))->not->toHaveKey('clientes');
+});
+
+test('opciones de citas no abre el endpoint de gestión de profesionales', function () {
+    $this->tenant->run(fn () => Local::create(['nombre' => 'Principal', 'activo' => true, 'es_principal' => true]));
+    habilitarEnSedes($this);
+    $token = cuentaDelNegocio($this, [
+        'permisos' => ['citas' => 'gestionar'],
+        'ficha' => $this->profesional->id,
+    ]);
+
+    comoOtro($this, $token)->getJson('/api/profesionales')->assertForbidden();
+});
+
+test('opciones incluye productos y clientes paginados cuando el rol los puede ver', function () {
+    $this->tenant->run(function () {
+        Local::create(['nombre' => 'Principal', 'activo' => true, 'es_principal' => true]);
+        Producto::create(['nombre' => 'Gel', 'precio' => 12, 'costo' => 4, 'stock' => 5, 'activo' => true]);
+        Producto::create(['nombre' => 'Oculto', 'precio' => 9, 'costo' => 3, 'stock' => 2, 'activo' => false]);
+        Cliente::create(['nombre' => 'Ana', 'apellido' => 'Torres', 'telefono' => '999111222']);
+        Cliente::create(['nombre' => 'Luis', 'apellido' => 'Ramos', 'telefono' => '999333444']);
+    });
+    habilitarEnSedes($this);
+    $this->tenant->update(['configuracion' => ['agenda' => ['modo_intervalo' => 'fijo', 'intervalo_min' => 30]]]);
+
+    $token = cuentaDelNegocio($this, [
+        'permisos' => ['citas' => 'gestionar', 'inventario' => 'ver', 'clientes' => 'ver'],
+        'ficha' => $this->profesional->id,
+    ]);
+
+    $respuesta = comoOtro($this, $token)->getJson('/api/citas/opciones?search=Ana&per_page=1')->assertOk();
+
+    $respuesta->assertJsonPath('data.productos.data.0.nombre', 'Gel')
+        ->assertJsonPath('data.productos.data.0.precio_venta', 12)
+        ->assertJsonPath('data.productos.meta.total', 1)
+        ->assertJsonPath('data.productos.meta.per_page', 1)
+        ->assertJsonPath('data.clientes.data.0.nombre', 'Ana Torres')
+        ->assertJsonPath('data.clientes.meta.total', 1)
+        ->assertJsonPath('data.agenda.modo_intervalo', 'fijo')
+        ->assertJsonPath('data.agenda.intervalo_min', 30);
+});
+
+test('opciones respeta el alcance de sedes y excluye profesionales deshabilitados', function () {
+    [$norte, $sur] = $this->tenant->run(fn () => [
+        Local::create(['nombre' => 'Norte', 'activo' => true]),
+        Local::create(['nombre' => 'Sur', 'activo' => true]),
+    ]);
+    $this->tenant->run(function () use ($norte, $sur) {
+        $this->profesional->locales()->sync([
+            $norte->id => ['habilitado' => true],
+            $sur->id => ['habilitado' => false],
+        ]);
+    });
+
+    $token = cuentaDelNegocio($this, [
+        'permisos' => ['citas' => 'gestionar'],
+        'solo_propios' => false,
+        'ficha' => $this->profesional->id,
+        'locales' => [$norte->id],
+    ]);
+
+    $respuesta = comoOtro($this, $token)->getJson('/api/citas/opciones')->assertOk();
+
+    expect($respuesta->json('data.locales.data'))->toHaveCount(1)
+        ->and($respuesta->json('data.locales.data.0.id'))->toBe($norte->id)
+        ->and(collect($respuesta->json('data.profesionales.data'))->pluck('id')->all())
+        ->toContain($this->profesional->id);
+});
+
+test('sin permiso de citas las opciones responden sin_permiso', function () {
+    $token = cuentaDelNegocio($this, [
+        'permisos' => ['clientes' => 'ver'],
+        'ficha' => $this->profesional->id,
+    ]);
+
+    comoOtro($this, $token)->getJson('/api/citas/opciones')
+        ->assertForbidden()
+        ->assertJsonPath('codigo', 'sin_permiso');
+});
+
 /*
  * `solo_propios` llevaba desde el Sprint 2 guardándose sin filtrar nada, porque
  * no había citas que filtrar. Aquí empieza a significar algo.

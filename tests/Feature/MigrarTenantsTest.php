@@ -96,7 +96,7 @@ test('un tenant provisionado ANTES de la separación se migra sin perder datos',
 
     $tenant->run(function () use ($dueno, $rolDueno) {
         // Los roles sembrados siguen ahí: la migración no recrea esa tabla.
-        expect(DB::table('roles')->count())->toBe(3);
+        expect(DB::table('roles')->count())->toBe(4);
 
         // Y su gente conserva el vínculo con sus permisos.
         $cuenta = DB::table('usuarios')->where('central_user_id', $dueno->id)->first();
@@ -158,7 +158,7 @@ test('renombrar las claves de rol conserva a la gente y respeta lo personalizado
 
         // Las claves nuevas, sobre las MISMAS filas: los ids no se mueven.
         expect($roles->keys()->sort()->values()->all())
-            ->toBe(['admin_general', 'admin_local', 'profesional'])
+            ->toBe(['admin_general', 'admin_local', 'profesional', 'recepcion'])
             ->and($roles['admin_general']->id)->toBe($idsAntes['dueno'])
             ->and($roles['admin_local']->id)->toBe($idsAntes['admin']);
 
@@ -171,6 +171,85 @@ test('renombrar las claves de rol conserva a la gente y respeta lo personalizado
 
         // ...y se respeta en el que el negocio personalizó.
         expect($roles['admin_local']->nombre)->toBe('La encargada');
+    });
+});
+
+test('añadir recepción a un tenant existente no toca un rol personalizado', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () {
+        DB::table('roles')->where('clave', 'recepcion')->delete();
+
+        DB::table('roles')->insert([
+            'nombre' => 'Cajera propia',
+            'clave' => null,
+            'sistema' => false,
+            'permisos' => json_encode(['caja' => 'gestionar']),
+            'solo_propios' => false,
+            'editado_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('migrations')
+            ->where('migration', '2026_10_20_000001_sembra_rol_recepcion')
+            ->delete();
+    });
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $tenant->run(function () {
+        expect(DB::table('roles')->where('clave', 'recepcion')->value('nombre'))
+            ->toBe('Recepción')
+            ->and(DB::table('roles')->where('nombre', 'Cajera propia')->value('sistema'))
+            ->toBe(0)
+            ->and(json_decode((string) DB::table('roles')->where('clave', 'admin_local')->value('permisos'), true)['pagos'])
+            ->toBe('gestionar');
+    });
+});
+
+test('añadir recepción tolera nombres propios en conflicto y el rollback conserva personalizaciones', function () {
+    $tenant = crearTenantRegistrado($this->plan);
+    crearDueno($tenant);
+    (new ProvisionTenantDatabase($tenant))->handle();
+
+    $tenant->run(function () {
+        DB::table('roles')->where('clave', 'recepcion')->delete();
+
+        DB::table('roles')->insert([
+            'nombre' => 'Recepción',
+            'clave' => null,
+            'sistema' => false,
+            'permisos' => json_encode(['caja' => 'gestionar']),
+            'solo_propios' => false,
+            'editado_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('migrations')
+            ->where('migration', '2026_10_20_000001_sembra_rol_recepcion')
+            ->delete();
+    });
+
+    $this->artisan('tenants:migrar-provisionados')->assertSuccessful();
+
+    $tenant->run(function () {
+        $recepcion = DB::table('roles')->where('clave', 'recepcion')->first();
+        expect($recepcion->nombre)->toBe('Recepción (sistema)');
+        expect(DB::table('roles')->where('nombre', 'Recepción')->value('sistema'))->toBe(0);
+
+        DB::table('roles')->where('clave', 'recepcion')->update([
+            'nombre' => 'Mesa de entrada',
+            'editado_at' => now(),
+        ]);
+
+        $migration = require database_path('migrations/tenant/2026_10_20_000001_sembra_rol_recepcion.php');
+        $migration->down();
+
+        expect(DB::table('roles')->where('clave', 'recepcion')->exists())->toBeTrue();
     });
 });
 

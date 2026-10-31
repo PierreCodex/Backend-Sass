@@ -45,14 +45,14 @@ class Rol extends Model
     /** @return array<int, string> Las claves de los roles de sistema. */
     public static function clavesDeSistema(): array
     {
-        return ['admin_general', 'admin_local', 'profesional'];
+        return ['admin_general', 'admin_local', 'profesional', 'recepcion'];
     }
 
     /**
-     * La matriz con los 14 módulos, `null` donde no hay acceso.
+     * La matriz con los 15 módulos, `null` donde no hay acceso.
      *
      * El JSON guardado solo trae las claves con permiso (el preset de
-     * Profesional tiene cinco de catorce). Rellenar los huecos aquí, y no en
+     * Profesional tiene cinco de quince). Rellenar los huecos aquí, y no en
      * el cliente, es lo que evita que la lista de módulos exista en dos sitios.
      *
      * @return array<string, string|null>

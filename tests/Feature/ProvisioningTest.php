@@ -107,7 +107,7 @@ test('re-lanzar el job de provisioning es idempotente', function () {
     $tenant->run(function () use ($dueno) {
         expect(DB::table('usuarios')->where('central_user_id', $dueno->id)->count())->toBe(1)
             ->and(DB::table('profesionales')->count())->toBe(1)
-            ->and(DB::table('roles')->count())->toBe(3);
+            ->and(DB::table('roles')->count())->toBe(4);
     });
 });
 
@@ -134,7 +134,7 @@ test('aislación básica: los datos del tenant A no existen en el tenant B', fun
         ->and($clientesEnB)->toBe(0);
 });
 
-test('el provisioning siembra los tres roles de sistema y le da el de general al titular', function () {
+test('el provisioning siembra los cuatro roles de sistema y le da el de general al titular', function () {
     $tenant = crearTenantRegistrado($this->planPrueba);
     $dueno = crearDueno($tenant);
 
@@ -143,9 +143,10 @@ test('el provisioning siembra los tres roles de sistema y le da el de general al
     $tenant->run(function () use ($dueno) {
         $roles = DB::table('roles')->orderBy('id')->get()->keyBy('clave');
 
-        expect($roles->keys()->all())->toBe(['admin_general', 'admin_local', 'profesional']);
+        expect($roles->keys()->sort()->values()->all())
+            ->toBe(['admin_general', 'admin_local', 'profesional', 'recepcion']);
 
-        // Los tres son de sistema: no se borran nunca (siempre tiene que haber
+        // Los cuatro son de sistema: no se borran nunca (siempre tiene que haber
         // dónde meter a un barbero). Solo el de dueño tampoco se edita.
         $roles->each(fn ($rol) => expect((bool) $rol->sistema)->toBeTrue());
 
@@ -157,6 +158,13 @@ test('el provisioning siembra los tres roles de sistema y le da el de general al
         $admin = json_decode($roles['admin_local']->permisos, true);
         expect($admin['facturacion'])->toBeNull()
             ->and($admin['caja'])->toBe('gestionar');
+
+        $recepcion = json_decode($roles['recepcion']->permisos, true);
+        expect($recepcion['citas'])->toBe('gestionar')
+            ->and($recepcion['clientes'])->toBe('gestionar')
+            ->and($recepcion['pagos'])->toBe('gestionar')
+            ->and($recepcion['configuracion'] ?? null)->toBeNull()
+            ->and($recepcion['facturacion'] ?? null)->toBeNull();
 
         // El profesional ve SUS citas, no las de sus compañeros.
         expect((bool) $roles['profesional']->solo_propios)->toBeTrue()

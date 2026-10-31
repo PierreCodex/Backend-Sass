@@ -273,6 +273,7 @@ test('el panel pide sus capacidades resueltas', function () {
 
     expect(array_keys($data['permisos']))->toBe(RolesSistema::MODULOS)
         ->and($data['permisos']['facturacion'])->toBe('gestionar')
+        ->and($data['permisos']['pagos'])->toBe('gestionar')
         ->and($data['solo_propios'])->toBeFalse()
         // `null` = todas. Una lista vacía significaría ninguna.
         ->and($data['locales'])->toBeNull();
@@ -286,6 +287,7 @@ test('el profesional viene con solo_propios y su matriz recortada', function () 
     expect($data['solo_propios'])->toBeTrue()
         ->and($data['permisos']['clientes'])->toBe('ver')
         ->and($data['permisos']['caja'])->toBeNull()
+        ->and($data['permisos']['pagos'])->toBeNull()
         ->and($data['permisos']['facturacion'])->toBeNull();
 });
 
